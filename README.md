@@ -56,3 +56,9 @@ autonomous-uav-system/
 10. 반복 실험 및 성능 분석
 
 > 현재 프로젝트 초기 단계이며, 실제 기체 및 센서 사양은 학교 승인과 구매 확정 후 업데이트합니다.
+
+## Dashboard / UAV Control Station
+
+`dashboard/` contains the React + TypeScript control-station UI. See [Dashboard README](dashboard/README.md) for development and validation commands.
+
+`dashboard_bridge/` preserves the read-only ROS2/PX4 status bridge; see [Bridge README](dashboard_bridge/README.md). Actual ROS2/PX4 validation remains pending on Ubuntu. Flight commands and sensor/position integrations are not enabled.

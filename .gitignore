@@ -95,3 +95,14 @@ tempCodeRunnerFile.py
 # Local databases
 *.sqlite
 *.sqlite3
+
+# Dashboard generated dependencies and artifacts
+/dashboard/node_modules/
+/dashboard/dist/
+/dashboard/build/
+/dashboard/coverage/
+/dashboard/.vite/
+/dashboard/.cache/
+/dashboard/*.tsbuildinfo
+/dashboard/.env.local
+/dashboard/.env.*.local
