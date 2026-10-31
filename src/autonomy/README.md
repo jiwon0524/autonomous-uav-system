@@ -52,3 +52,40 @@ python -B -m unittest discover -s tests -v
 
 코드를 임포트할 때 autonomy 패키지 경로는 src 아래입니다. 테스트는 저장소 루트의
 Python namespace 경로(src.autonomy.core)를 사용하며 pip 설치나 ROS workspace 빌드가 필요하지 않습니다.
+
+## Target Manager
+
+`targets/target_manager.py`는 순수 Python 객체 목록/식별/primary 선택 및 추적 상태 관리입니다.
+Mission State Machine을 import하거나 직접 호출하지 않으며 ROS2/카메라/Tracker와 연결하지 않습니다.
+
+- Detection: 화면의 객체 발견. Target Manager: 객체와 현재 목표 관리.
+- Tracker: 선택된 동일 객체를 프레임 간 추적. Mission State Machine: 전체 임무 상태 관리.
+- Flight Control: 실제 PX4 이동 명령 생성(이번 계층에는 없음).
+
+Target은 UUID 내부 ID, PERSON/VEHICLE/OBJECT 유형, 상태, 선택 여부, 선택적 외부 ID,
+마지막 Observation과 TargetChange(최근 변경과 최근 상태 전환을 구분)를 가진 불변 snapshot입니다. 목록은 tuple로 반환합니다.
+register_target/get_target/list_targets/select_target/get_selected_target/deselect_target,
+start_tracking/mark_lost/start_reacquiring/reacquire/update_observation API를 제공합니다.
+외부 ID는 하드웨어에 종속되지 않는 ExternalTargetId(source, value)이며 같은 쌍이면
+같은 내부 Target을 갱신합니다. 다른 type으로 재등록하면 거부합니다. 외부 ID가 없으면
+등록마다 별개 Target이며 시각적 중복 판별/서로 다른 외부 ID의 동일 객체 매칭은 하지 않습니다.
+source는 세션/출처 범위를 포함해 ID 재사용 충돌을 방지하도록 외부 adapter가 정해야 합니다.
+
+상태: DETECTED → SELECTED → TRACKING → LOST → REACQUIRING → TRACKING.
+REACQUIRED는 지속 상태가 아니라 TRACKING 복귀 전환 이벤트입니다.
+TargetChange는 이전/현재 상태, 이벤트, 선택 전후, 논리적 순번을 보존합니다.
+last_changes는 최근 변경 작업의 불변 tuple(교체 시 두 대상)을 제공하며 전체 이력 저장소는 아닙니다.
+미래 adapter가 Target event를 Mission event로 변환할 수 있지만 현재 연결하지 않습니다.
+
+선택한 정책(향후 운용 검증/변경 필요):
+- primary는 최대 1개. 기본 REPLACE, 선택적으로 REJECT 정책을 생성자에서 지정합니다.
+- 교체/해제 시 이전 SELECTED/TRACKING은 DETECTED, LOST/REACQUIRING은 LOST로 남깁니다.
+  LOST를 다시 선택해도 SELECTED로 정상화하지 않고 명시적 재탐색/재획득을 거쳐야 합니다.
+- 같은 primary 재선택과 같은 Observation 재전달은 변경 없는 idempotent 동작입니다.
+- 관측 sequence는 외부가 제공하는 target별 증가 정수입니다. 오래되거나 같은 순번의 충돌 관측은 거부합니다.
+  재획득은 REACQUIRING인 primary와 더 새로운 Observation을 요구합니다. 동일성 판단은 외부 adapter 책임입니다.
+- 관측 갱신 자체는 LOST를 복구하지 않습니다. 실제 수신 adapter는 재획득 시 reacquire에 관측을 직접 전달합니다.
+- 외부 clock을 읽지 않습니다. 선택적 observed_at은 timezone-aware datetime이며 sequence가 순서 기준입니다.
+- 단일 소유자의 순차 호출을 전제로 하며 자동 timeout/추론/스레드/명령/가짜 데이터 생성은 없습니다.
+
+저장소 루트의 기존 `python -B -m unittest discover -s tests -v`로 Mission과 Target 테스트를 함께 실행합니다.
