@@ -89,3 +89,32 @@ last_changes는 최근 변경 작업의 불변 tuple(교체 시 두 대상)을 �
 - 단일 소유자의 순차 호출을 전제로 하며 자동 timeout/추론/스레드/명령/가짜 데이터 생성은 없습니다.
 
 저장소 루트의 기존 `python -B -m unittest discover -s tests -v`로 Mission과 Target 테스트를 함께 실행합니다.
+
+## Tracking 계약
+
+기존에는 Target 관측 순번/상태 관리만 있었으며 bbox 또는 Tracker 구현은 없었습니다.
+`tracking/`은 불변 BoundingBox, ImageSize, FrameInfo, TrackingObservation과
+제네릭 `Tracker[FrameT]` Protocol만 제공합니다. 실제 tracker/adapter는 아직 없습니다.
+
+역할: Detection은 객체 후보 발견, Target Manager는 현재 목표/논리 상태 관리,
+Tracker는 선택된 목표의 frame별 관측 위치 제공, Mission State Machine은 전체 임무 상태,
+Flight Control은 실제 PX4 이동 명령을 담당합니다. 현재 서로 자동 연결하지 않습니다.
+
+선택한 좌표/결과 정책:
+- bbox는 좌상단 원점의 연속 pixel edge(x 오른쪽/y 아래), x2/y2는 exclusive 최대 경계.
+  유한·비음수 좌표와 양수 면적만 허용하며 자동 clipping/정규화는 하지 않습니다.
+- width/height/center는 bbox에서 계산합니다. ImageSize가 있으면 경계 밖 bbox를 거부합니다.
+  이미지 해상도 정보는 향후 화면 중심 오차 계산용이며 현재 오차 제어/거리/3D 변환은 없습니다.
+- TrackingObservation은 기존 Target UUID를 참조하며 ID를 발급하거나 대상 존재를 검증하지 않습니다.
+  FrameInfo는 기존 Observation의 sequence/선택적 timezone-aware 시각 계약을 재사용합니다.
+- observed=True는 bbox 필수, confidence는 None 또는 유한한 [0,1]. 실패는 bbox/confidence/center 없음.
+  success는 observed의 파생값이므로 별도의 추적 상태 머신은 없습니다.
+- 선택적 외부 ID는 기존 ExternalTargetId를 재사용합니다. frame_id는 frame 메타데이터이며 Target ID가 아닙니다.
+- 향후 실제 YOLO/ByteTrack/OpenCV adapter가 Tracker.initialize(선택 UUID, 초기 ROI, frame, frame_info)와
+  track(UUID, frame, frame_info)를 구현합니다. FrameT는 불투명한 입력 payload로 특정 CV 타입을 가정하지 않습니다.
+  결과의 UUID/frame 메타데이터 일치와 실제 객체 동일성은 adapter 책임입니다.
+- 관측 실패 자체는 Target LOST를 호출하지 않습니다. LOST/REACQUIRING 정책은 기존 Target Manager에 남고,
+  향후 상위 adapter가 결과를 해석합니다. 초기화/순번 검증 등 tracker 내부 규약은 concrete adapter 책임입니다.
+
+기존 `python -B -m unittest discover -s tests -v`에 Tracking 계약 테스트가 포함됩니다.
+테스트 fixture는 tests/에만 있으며 runtime 가짜 관측/모델/영상은 생성하지 않습니다.
