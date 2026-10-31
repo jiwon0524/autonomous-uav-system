@@ -62,3 +62,7 @@ autonomous-uav-system/
 `dashboard/` contains the React + TypeScript control-station UI. See [Dashboard README](dashboard/README.md) for development and validation commands.
 
 `dashboard_bridge/` preserves the read-only ROS2/PX4 status bridge; see [Bridge README](dashboard_bridge/README.md). Actual ROS2/PX4 validation remains pending on Ubuntu. Flight commands and sensor/position integrations are not enabled.
+
+## Mission State Machine
+
+Pure Python mission domain logic lives in `src/autonomy/core/`, separate from Dashboard and the status bridge. It does not control the UAV or require ROS2. See [purpose, transitions and tests](src/autonomy/README.md).
