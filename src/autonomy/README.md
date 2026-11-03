@@ -118,3 +118,79 @@ Flight Control은 실제 PX4 이동 명령을 담당합니다. 현재 서로 자
 
 기존 `python -B -m unittest discover -s tests -v`에 Tracking 계약 테스트가 포함됩니다.
 테스트 fixture는 tests/에만 있으며 runtime 가짜 관측/모델/영상은 생성하지 않습니다.
+
+
+## Detection / 선택적 YOLO adapter
+
+Detection = 현재 frame의 객체 후보 탐지, Target Manager = 현재 목표/논리 상태 관리,
+Tracker = 선택된 동일 목표의 frame 간 관측 위치 유지, Mission State Machine = 전체 임무 상태,
+Flight Control = 실제 PX4 이동 제어. 이번 구현은 Detection만 수행하며 서로 자동 연결하지 않습니다.
+
+`detection/`의 불변 Detection은 TargetType, class_name, 기존 BoundingBox/FrameInfo,
+confidence [0,1], 선택적 class_id를 보존합니다. Target UUID는 생성하지 않습니다.
+`vision/yolo.py`만 Ultralytics 객체를 다루고 tuple[Detection, ...]로 변환합니다.
+입력은 한 장의 BGR image이며 카메라 획득은 별도 demo에 있습니다. 추적/목표 선택은 없습니다.
+
+기본 모델은 공식 소형 pretrained COCO `yolo11n.pt`입니다. 모델/threshold/device/필터는 변경 가능합니다.
+PERSON은 모델 names의 person label로 필터링하므로 class 0을 무조건 가정하지 않습니다.
+`--classes person car` 또는 `--classes all`로 확장할 수 있습니다. 이름 기준 person은 PERSON,
+bicycle/car/motorcycle/bus/truck/train/boat/airplane은 VEHICLE, 나머지는 OBJECT로 분류합니다.
+모델 고유 label과 class_id도 보존하며 이름이 다른 custom model은 별도 매핑 확장이 필요합니다.
+
+Windows 수동 검증(저장소 루트, 별도 Python 3.11/3.12 가상환경 권장):
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-vision.txt
+.\.venv\Scripts\python.exe -B -m src.autonomy.vision.webcam_demo --camera 0 --confidence 0.25
+# 모델 파일/이름 변경: --model C:\models\custom.pt
+```
+위 `.venv/`는 기존 Git ignore 대상입니다. 저장소 밖의 별도 가상환경을 사용해도 됩니다.
+Ultralytics는 추론/PyTorch, opencv-python은 camera/read/display용 선택 의존성입니다.
+기본 CPU로 동작하며 기본 모델의 최초 수동 실행은 weight 다운로드/네트워크가 필요할 수 있습니다.
+오프라인에서는 미리 받은 --model 파일을 사용합니다. 모델/영상은 Git에 저장하지 않습니다.
+공식 API: https://docs.ultralytics.com/models/yolo11/ , https://docs.ultralytics.com/modes/predict/
+
+bbox는 기존 연속 pixel edge 계약을 유지합니다. 잘못된 geometry/score/배열은 해당 frame 전체를
+명시적 오류로 거부하고 부분 결과나 이전 bbox를 제공하지 않습니다. Demo는 stderr와 화면에
+오류를 알리고 다음 frame을 처리하며 5회 연속 탐지 실패 시 종료합니다. camera open/read 오류는
+즉시 종료합니다. q/ESC/창 닫기로 종료하고 camera/window 자원을 정리합니다.
+전체 자동 테스트는 기존 unittest 명령으로 실행하며 CV 설치/모델 다운로드/카메라가 필요 없습니다.
+실제 설치 호환성, weight 로딩, PERSON 탐지, webcam 종료/권한은 수동 검증 대상입니다.
+
+
+## Camera Source
+
+`vision/sources/`는 `CameraSource[PixelT]` Protocol(open/read/close/is_open),
+불변 CameraFrame envelope(pixels + 기존 FrameInfo), OpenCVSource adapter를 제공합니다.
+Protocol과 frame은 OpenCV에 의존하지 않고 import 시 CV 라이브러리를 로드하지 않습니다.
+`OpenCVSource(camera_index=...)`는 내장/USB webcam 및 OS가 camera 장치로 인식한 UVC phone,
+`OpenCVSource(url=...)`는 사용자 제공 network/IP/phone stream을 처리합니다.
+URL은 scheme/host를 검증한 뒤 그대로 backend에 전달합니다. 특정 앱/주소/장치 번호는 가정하지 않습니다.
+실제 URL protocol/codec 지원과 open/read blocking 시간은 설치된 OpenCV backend에 따라 다릅니다.
+OpenCV API: https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html
+
+CameraSource → CameraFrame → YOLO → Detection 흐름이며 YOLO와 도메인 모델은 변경하지 않았습니다.
+반환 pixels는 복사하지 않으며 OpenCV adapter는 HxWx3 BGR 영상을 제공합니다. envelope/metadata만
+불변이므로 demo의 표시용 그리기처럼 pixel 변경 시 공유 consumer가 있다면 호출자가 조율해야 합니다.
+FrameInfo는 성공한 read의 순번, 해상도, UTC host 수신 시각, source ID(frame_id)를 담습니다.
+시각은 노출 시각/동기화 시각이 아닙니다. 테스트 clock 주입을 지원하며 source 객체 수명 내 순번은
+재open 후에도 증가합니다. 새 객체는 0부터 시작하므로 상위 계층이 세션을 구분해야 합니다.
+여러 source를 구분하려면 source_id를 지정합니다(URL 기본 ID에는 자격 증명을 넣지 않습니다).
+
+기존 demo 명령은 유지되며 --source 기본값은 camera입니다(의존성 설치는 위와 동일).
+```powershell
+# 내장/USB/UVC: OS가 할당한 실제 camera index 선택
+.\.venv\Scripts\python.exe -B -m src.autonomy.vision.webcam_demo --source camera --camera 1
+# network: 실제 stream URL로 교체
+.\.venv\Scripts\python.exe -B -m src.autonomy.vision.webcam_demo --source url --url "<video-stream-url>"
+```
+--model/--confidence/--classes/--device 및 bbox 표시, q/ESC/창 닫기 종료는 유지합니다.
+open/close는 idempotent이며 닫힌 source read는 SourceClosedError로 거부합니다.
+open 실패 시 열린 handle을 release하고 SourceOpenError, read 실패 시 source를 닫고
+FrameReadError를 반환합니다. release 실패도 CameraSourceError로 명시적으로 알립니다.
+자동 재연결/백그라운드 thread/가짜 frame은 없습니다. 종료 시 source와 표시 창을 정리합니다.
+
+향후 Gazebo/ROS2 camera, UAV RGB, Depth camera RGB는 별도 adapter로 CameraSource를 구현하고
+같은 CameraFrame/YOLO 입력 흐름에 연결합니다. ROS message 수신을 VideoCapture로 강제하지 않습니다.
+이번에는 해당 adapter나 Depth 처리를 구현하지 않았습니다. Bluetooth video는 기본 입력 방식이 아닙니다.
+새 의존성은 없으며 실제 장치/stream의 연결·성능·종료는 수동 검증해야 합니다.
