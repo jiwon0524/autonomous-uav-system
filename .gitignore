@@ -106,3 +106,7 @@ tempCodeRunnerFile.py
 /dashboard/*.tsbuildinfo
 /dashboard/.env.local
 /dashboard/.env.*.local
+
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo

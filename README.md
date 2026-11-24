@@ -1,64 +1,31 @@
-# Autonomous UAV System
+# FireScene GCS
 
-ROS2/PX4 기반 자율비행 드론 시스템 프로젝트입니다.
+FireScene GCS는 실제 드론 관제를 위한 데스크톱 앱의 초기 프론트엔드입니다. 현재 화면은 Figma Soft Neutral 시안을 기반으로 한 미연결 상태이며 통신, 지도와 비행 명령은 구현되지 않았습니다.
 
-본 프로젝트는 카메라 기반 목표물 탐지·추적, 장애물 인식·회피, 동적 경로 재계획, 목표물 재탐색 및 안전 비행 기능을 하나의 시스템으로 통합하는 것을 목표로 합니다.
+## 개발 환경 및 실행
 
-## Core Pipeline
+Node.js와 npm이 필요합니다. 저장소 루트에서:
 
-```text
-Camera / Sensor
-      ↓
-Perception (AI Detection / Tracking)
-      ↓
-Decision / State Machine
-      ↓
-Path Planning / Replanning
-      ↓
-Control
-      ↓
-ROS2 ↔ PX4 / Pixhawk
-      ↓
-UAV
+```bash
+cd frontend
+npm ci
+npm run dev
 ```
 
-## Planned Tech Stack
+브라우저에서 Vite가 표시하는 로컬 주소를 엽니다. 검증 명령:
 
-- Ubuntu / Linux
-- ROS2
-- PX4 / Pixhawk
-- Python / C++
-- YOLO / OpenCV
-- A* path planning
-
-## Repository Structure
-
-```text
-autonomous-uav-system/
-├── src/          # 실제 자율비행 소프트웨어 코드
-├── config/       # 파라미터 및 설정 파일
-├── experiments/  # 실험 코드와 결과 정리
-├── docs/         # 설계 및 기술 문서
-└── README.md
+```bash
+npm run typecheck
+npm run build
+node tests/offline.test.mjs
 ```
 
-## Development Plan
+왼쪽 메뉴에서 9개 작업 공간을 선택할 수 있습니다. 종합 관제 외 메뉴는 개발 예정 화면입니다. 수신된 기체 데이터가 없으므로 연결 상태, 위치, 모드 및 ARM 상태는 미연결 또는 확인 불가로 표시합니다. 실제 명령이나 기체 연결 기능은 없습니다.
 
-1. ROS2 / PX4 개발환경 구축
-2. PX4 SITL 기본 비행 검증
-3. 카메라 입력 및 목표물 탐지
-4. 목표물 추적 및 자동 추종
-5. 장애물 인식
-6. A* 경로계획 및 동적 재계획
-7. 목표물 재탐색
-8. ROS2/PX4 통합
-9. 실제 기체 단계별 시험
-10. 반복 실험 및 성능 분석
+## 구조
 
-> 현재 프로젝트 초기 단계이며, 실제 기체 및 센서 사양은 학교 승인과 구매 확정 후 업데이트합니다.
+- `frontend/`: React/TypeScript 관제 UI 및 초기 상태 검사
+- `docs/`: 개발 기록
+- `references/`: 로컬 전용 Figma 및 리서치 원본. 공개 및 커밋 전 별도 검토 필요
 
-## Dashboard / UAV Control Station
-
-`dashboard/` contains the React + TypeScript control-station UI. See [Dashboard README](dashboard/README.md) for development and validation commands.
-
-`dashboard_bridge/` preserves the read-only ROS2/PX4 status bridge; see [Bridge README](dashboard_bridge/README.md). Actual ROS2/PX4 validation remains pending on Ubuntu. Flight commands and sensor/position integrations are not enabled.
+향후 Tauri 2 데스크톱 셸과 독립 통신 계층을 검토합니다. ROS2는 현재 실행에 필요하지 않습니다. 실제 기체 명령은 향후 UI와 백엔드 양쪽에서 차단 정책을 마련하고 검증하기 전까지 구현하지 않습니다.
