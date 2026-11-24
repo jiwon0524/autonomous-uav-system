@@ -1,7 +1,7 @@
 use mavlink::{
     dialects::common::MavMessage, error::MessageReadError, MAVLinkMessageRaw, MavlinkReader,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read},
     sync::{
@@ -36,6 +36,7 @@ struct Vehicle {
 pub struct Snapshot {
     phase: Phase,
     port: Option<String>,
+    source: String,
     vehicle: Option<Vehicle>,
     last_heartbeat_ms: Option<u64>,
     error: Option<String>,
@@ -50,6 +51,13 @@ pub struct Port {
     serial_number: Option<String>,
     access: String,
 }
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct AutoDevice {
+    vid: u16,
+    pid: u16,
+    serial: String,
+    baud: u32,
+}
 struct Worker {
     cancel: Arc<AtomicBool>,
     handle: JoinHandle<()>,
@@ -57,6 +65,7 @@ struct Worker {
 pub struct Manager {
     snapshot: Arc<Mutex<Snapshot>>,
     worker: Mutex<Option<Worker>>,
+    auto_allowed: Mutex<Option<AutoDevice>>,
 }
 impl Default for Manager {
     fn default() -> Self {
@@ -64,11 +73,13 @@ impl Default for Manager {
             snapshot: Arc::new(Mutex::new(Snapshot {
                 phase: Phase::Disconnected,
                 port: None,
+                source: "OFFLINE".into(),
                 vehicle: None,
                 last_heartbeat_ms: None,
                 error: None,
             })),
             worker: Mutex::new(None),
+            auto_allowed: Mutex::new(None),
         }
     }
 }
@@ -80,10 +91,12 @@ impl Manager {
         }
     }
     pub fn disconnect(&self) {
+        *self.auto_allowed.lock().unwrap() = None;
         self.stop();
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::Disconnected,
             port: None,
+            source: "OFFLINE".into(),
             vehicle: None,
             last_heartbeat_ms: None,
             error: None,
@@ -133,6 +146,7 @@ impl Manager {
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::Connecting,
             port: Some(port.clone()),
+            source: "HARDWARE_LINK".into(),
             vehicle: None,
             last_heartbeat_ms: None,
             error: None,
@@ -141,6 +155,76 @@ impl Manager {
         let cancel = Arc::new(AtomicBool::new(false));
         let flag = cancel.clone();
         let handle = thread::spawn(move || run(port, baud, shared, flag));
+        *worker = Some(Worker { cancel, handle });
+        Ok(())
+    }
+    pub fn set_auto(&self, device: Option<AutoDevice>) -> Result<(), String> {
+        if let Some(d) = &device {
+            if d.serial.trim().is_empty()
+                || ![57600, 115200, 230400, 460800, 921600].contains(&d.baud)
+            {
+                return Err("자동 연결 장치 정보가 올바르지 않습니다.".into());
+            }
+        }
+        *self.auto_allowed.lock().unwrap() = device;
+        Ok(())
+    }
+    pub fn connect_authorized(&self, port: String, device: AutoDevice) -> Result<(), String> {
+        let allowed = self.auto_allowed.lock().unwrap();
+        if allowed.as_ref() != Some(&device) {
+            return Err("자동 연결을 허용하지 않은 장치입니다.".into());
+        }
+        let ports = self.list()?;
+        let matches: Vec<_> = ports
+            .iter()
+            .filter(|p| {
+                p.vid == device.vid
+                    && p.pid == device.pid
+                    && p.serial_number.as_deref() == Some(device.serial.as_str())
+            })
+            .collect();
+        if matches.len() != 1 || matches[0].name != port {
+            return Err("허용 장치가 없거나 식별 정보가 중복됩니다.".into());
+        }
+        self.connect(port, device.baud)
+    }
+    pub fn connect_simulation(&self) -> Result<(), String> {
+        self.simulation_at("127.0.0.1:14540")
+    }
+    fn simulation_at(&self, address: &str) -> Result<(), String> {
+        let mut worker = self.worker.lock().unwrap();
+        if worker.as_ref().is_some_and(|w| !w.handle.is_finished()) {
+            return Err("기존 연결을 먼저 해제하세요.".into());
+        }
+        if let Some(old) = worker.take() {
+            let _ = old.handle.join();
+        }
+        let socket = std::net::UdpSocket::bind(address)
+            .map_err(|e| format!("시뮬레이션 UDP 열기 실패: {e}"))?;
+        socket
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .map_err(|e| e.to_string())?;
+        let local_address = socket.local_addr().map_err(|e| e.to_string())?.to_string();
+        *self.snapshot.lock().unwrap() = Snapshot {
+            phase: Phase::WaitingHeartbeat,
+            port: Some(local_address),
+            source: "SIMULATION".into(),
+            vehicle: None,
+            last_heartbeat_ms: None,
+            error: None,
+        };
+        let shared = self.snapshot.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        let handle = thread::spawn(move || {
+            receive(
+                UdpReader(socket),
+                shared,
+                flag,
+                Duration::from_secs(10),
+                Duration::from_secs(5),
+            )
+        });
         *worker = Some(Worker { cancel, handle });
         Ok(())
     }
@@ -302,11 +386,27 @@ fn run_with_timeouts(
         let mut s = shared.lock().unwrap();
         s.phase = Phase::WaitingHeartbeat;
     }
+    receive(file, shared, cancel, wait_timeout, loss_timeout);
+}
+// Local UDP listener is intentionally receive-only and cannot select remote destinations.
+struct UdpReader(std::net::UdpSocket);
+impl Read for UdpReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.recv(buf)
+    }
+}
+fn receive<R: Read>(
+    input: R,
+    shared: Arc<Mutex<Snapshot>>,
+    cancel: Arc<AtomicBool>,
+    wait_timeout: Duration,
+    loss_timeout: Duration,
+) {
     let started = Instant::now();
     let mut last = None;
     let mut identity = None;
     let mut reader = MavlinkReader::new(BoundedReader {
-        inner: file,
+        inner: input,
         remaining: 4096,
     });
     loop {
@@ -385,6 +485,25 @@ pub fn connect_serial(
     manager.connect(port, baud)
 }
 #[tauri::command]
+pub fn set_auto_device(
+    manager: tauri::State<'_, Manager>,
+    device: Option<AutoDevice>,
+) -> Result<(), String> {
+    manager.set_auto(device)
+}
+#[tauri::command]
+pub fn auto_connect_serial(
+    manager: tauri::State<'_, Manager>,
+    port: String,
+    device: AutoDevice,
+) -> Result<(), String> {
+    manager.connect_authorized(port, device)
+}
+#[tauri::command]
+pub fn connect_simulation(manager: tauri::State<'_, Manager>) -> Result<(), String> {
+    manager.connect_simulation()
+}
+#[tauri::command]
 pub fn disconnect_serial(manager: tauri::State<'_, Manager>) {
     manager.disconnect();
 }
@@ -437,6 +556,7 @@ mod tests {
         Arc::new(Mutex::new(Snapshot {
             phase: Phase::Connecting,
             port: None,
+            source: "OFFLINE".into(),
             vehicle: None,
             last_heartbeat_ms: None,
             error: None,
@@ -498,6 +618,45 @@ mod tests {
         bad[11] ^= 1;
         let mut reader = MavlinkReader::new(std::io::Cursor::new(bad));
         assert!(reader.read_any_raw_message::<MavMessage>().is_err());
+    }
+    #[test]
+    fn auto_connect_requires_explicit_allowlist() {
+        let manager = Manager::default();
+        let device = AutoDevice {
+            vid: 1,
+            pid: 2,
+            serial: "TEST-ONLY".into(),
+            baud: 115200,
+        };
+        assert!(manager
+            .connect_authorized("/dev/not-a-device".into(), device.clone())
+            .unwrap_err()
+            .contains("허용하지"));
+        manager.set_auto(Some(device.clone())).unwrap();
+        assert!(manager
+            .connect_authorized("/dev/not-a-device".into(), device.clone())
+            .is_err());
+        manager.disconnect();
+        assert!(manager
+            .connect_authorized("/dev/not-a-device".into(), device)
+            .unwrap_err()
+            .contains("허용하지"));
+    }
+    #[test]
+    fn udp_simulation_receive_is_loopback_and_exclusive() {
+        let manager = Manager::default();
+        manager.simulation_at("127.0.0.1:0").unwrap();
+        assert!(manager.simulation_at("127.0.0.1:0").is_err());
+        assert_eq!(manager.snapshot().source, "SIMULATION");
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender
+            .send_to(&frame(12), manager.snapshot().port.unwrap())
+            .unwrap();
+        wait_for(&manager.snapshot, |p| matches!(p, Phase::Connected));
+        assert_eq!(manager.snapshot().vehicle.unwrap().system_id, 42);
+        manager.disconnect();
+        assert!(matches!(manager.snapshot().phase, Phase::Disconnected));
+        assert_eq!(manager.snapshot().source, "OFFLINE");
     }
     #[test]
     fn serial_discovery_and_invalid_selection() {

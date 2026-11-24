@@ -6,6 +6,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             connection::list_serial_ports,
             connection::connect_serial,
+            connection::auto_connect_serial,
+            connection::set_auto_device,
+            connection::connect_simulation,
             connection::disconnect_serial,
             connection::connection_status
         ])
