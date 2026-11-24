@@ -18,3 +18,17 @@ test('initial UI shows disconnected state and all navigation destinations', asyn
     for (const sample of ['18.4', '76%', 'F450-01', '대전 테스트 현장', '실시간 운용 샘플']) assert.ok(!html.includes(sample), sample);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('connection panel shows test heartbeat and marks lost data as previous', async () => {
+  const dir = await mkdtemp('node_modules/.firescene-test-');
+  try {
+    const result = await build({ entryPoints: ['src/Connection.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'] });
+    const path = `${dir}/connection.mjs`; await writeFile(path, result.outputFiles[0].text);
+    const { ConnectionSettings } = await import(pathToFileURL(`${process.cwd()}/${path}`));
+    const sample = { phase: 'CONNECTED', port: 'TEST-PORT', error: null, last_heartbeat_ms: 1700000000000, vehicle: { system_id: 42, component_id: 1, vehicle_type: 2, autopilot_type: 12, mavlink_version: 1, heartbeat_ms: 1700000000000 } };
+    const connected = renderToStaticMarkup(React.createElement(ConnectionSettings, { connection: sample }));
+    assert.ok(connected.includes('42 / 1')); assert.ok(connected.includes('PX4 HEARTBEAT 수신')); assert.ok(connected.includes('송신자 인증'));
+    const lost = renderToStaticMarkup(React.createElement(ConnectionSettings, { connection: { ...sample, phase: 'CONNECTION_LOST', vehicle: null } }));
+    assert.ok(lost.includes('연결 끊김')); assert.ok(lost.includes('이전 수신')); assert.ok(!lost.includes('42 / 1'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

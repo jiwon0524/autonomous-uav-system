@@ -8,4 +8,8 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+mavlink = { version = "0.21.0", default-features = false, features = ["std", "dialect-common"] }
+serialport = "4.10.1"
 tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
