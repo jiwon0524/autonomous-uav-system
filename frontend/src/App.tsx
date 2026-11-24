@@ -47,40 +47,32 @@ const descriptions = [
   '안전 관리 기능을 준비하고 있습니다.', '비행 기록 기능을 준비하고 있습니다.', '연결 및 프로그램 설정을 준비하고 있습니다.',
 ];
 
-function Telemetry() {
-  return <div className="telemetry">{[['고도', '—'], ['속도', '—'], ['배터리', '—'], ['GPS', '미수신']].map(([label, value]) =>
-    <div key={label}><span>{label}</span><p><b>{value}</b></p></div>)}</div>;
+function Metric({ label, unit, value = '—' }: { label: string; unit?: string; value?: string }) {
+  return <div className="metric"><span>{label}</span><div><strong>{value}</strong>{unit && <small>{unit}</small>}</div></div>;
 }
 
 function App() {
   const [page, setPage] = useState(0);
   const [details, setDetails] = useState(true);
-  return <div className="app"><div className="product soft-neutral">
-    <header className="soft-header">
-      <div className="product-brand"><Mark/><b>FireScene</b><span>GCS {version}</span></div>
-      <div className="workspace-name"><b>{navigation[page][1]}</b><span>/</span><span>GCS</span></div>
-      <div className="status-pill" style={{marginLeft:'auto'}}><Dot/><div><b>기체 미연결</b><span>텔레메트리 미연결</span></div></div>
+  const [theme, setTheme] = useState<'dark' | 'day'>('dark');
+  return <div className={`app theme-${theme}`}><div className="product">
+    <header className="header">
+      <div className="product-brand"><Mark/><div><b>FireScene <em>GCS</em></b><span>Ground Control Station · {version}</span></div></div>
+      <div className="header-context"><span>작업 공간</span><b>{navigation[page][1]}</b></div>
+      <div className="header-status"><Dot/><div><b>기체 미연결</b><span>텔레메트리 미연결</span></div></div>
+      <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'day' : 'dark')} aria-label={theme === 'dark' ? 'Day 테마로 변경' : 'Dark 테마로 변경'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17}/><span>{theme === 'dark' ? 'Day' : 'Dark'}</span></button>
     </header>
-    <div className={`soft-body ${details ? '' : 'panel-closed'}`}>
-      <nav className="nav-rail" aria-label="주 메뉴">{navigation.map(([icon,label],i)=><button key={icon} title={label} aria-label={label} aria-current={page === i ? 'page' : undefined} className={page === i ? 'active' : ''} onClick={()=>setPage(i)}><Icon name={icon}/></button>)}</nav>
-      <main className="soft-map-wrap">
-        <div className="map map-soft">
-          {page === 0 ? <>
-            <span className="map-heading">관제 작업 공간</span>
-            <div className="safety-notice"><Icon name="link" size={17}/><div><b>기체가 연결되지 않았습니다</b><span>기체 위치와 텔레메트리를 확인할 수 없습니다.</span></div></div>
-            <div className="map-unavailable"><strong>지도 연동 준비 중</strong><span>기체 위치: 확인 불가</span></div>
-            <div className="floating-flight"><div className="flight-heading"><span>현재 비행 정보</span><button aria-label="기체 정보 패널 열기" onClick={()=>setDetails(true)}><Icon name="panel" size={16}/></button></div><Telemetry/></div>
-          </> : <div className="placeholder"><Icon name={navigation[page][0]} size={28}/><h1>{navigation[page][1]}</h1><p>개발 예정</p><p>{descriptions[page]}</p></div>}
-        </div>
+    <div className="status-strip" aria-label="주요 비행 상태"><div><span>연결</span><b>미연결</b></div><div><span>비행 모드</span><b>확인 불가</b></div><div><span>ARM</span><b>확인 불가</b></div><div><span>GPS</span><b>미수신</b></div><div><span>배터리</span><b>—</b></div><div className="strip-lock"><Icon name="lock" size={14}/> 명령 잠김</div></div>
+    <div className={`body ${details ? '' : 'panel-closed'}`}>
+      <nav className="nav-rail" aria-label="주 메뉴"><div className="nav-label">메뉴</div>{navigation.map(([icon,label],i)=><button key={icon} title={label} aria-label={label} aria-current={page === i ? 'page' : undefined} className={page === i ? 'active' : ''} onClick={()=>setPage(i)}><Icon name={icon}/><span>{label}</span></button>)}<div className="nav-foot">FireScene<br/><span>운용 화면</span></div></nav>
+      <main className="workspace">
+        {page === 0 ? <><div className="workspace-heading"><div><span className="eyebrow">운용 개요</span><h1>종합 관제</h1><p>기체와 임무의 현재 상태</p></div><span className="source-label">데이터 소스 없음</span></div>
+          <section className="map-area" aria-label="지도 작업 공간"><div className="map-top"><div><b>관제 작업 공간</b><span>지도</span></div><span>위치 확인 불가</span></div><div className="map-empty"><Icon name="mapping" size={26}/><strong>지도 연동 준비 중</strong><span>기체 연결 후 위치를 확인할 수 있습니다</span></div><div className="map-bottom"><span>기체 위치</span><b>확인 불가</b></div></section>
+          <section className="telemetry-section"><div className="section-heading"><div><span className="eyebrow">기체 데이터</span><h2>현재 비행 정보</h2></div><span>수신된 데이터 없음</span></div><div className="metrics"><Metric label="고도" unit="m"/><Metric label="비행 속도" unit="m/s"/><Metric label="기체 방향" unit="°"/><Metric label="배터리" unit="%"/><Metric label="GPS" value="미수신"/></div></section>
+          <div className="overview-lower"><section><div className="section-heading"><h2>현재 임무</h2><span>정보 없음</span></div><p>표시할 임무가 없습니다</p><small>임무 연결 후 진행 상태를 확인할 수 있습니다.</small></section><section><div className="section-heading"><h2>최근 이벤트</h2><span>기록 없음</span></div><p>수신된 이벤트가 없습니다</p><small>기체 연결 후 이벤트가 표시됩니다.</small></section></div>
+        </> : page === 1 ? <><div className="workspace-heading"><div><span className="eyebrow">기체 운용</span><h1>비행 제어</h1><p>자세 및 비행 상태</p></div><span className="source-label">데이터 소스 없음</span></div><div className="flight-layout"><section className="attitude"><div className="section-heading"><div><span className="eyebrow">자세 정보</span><h2>기체 자세</h2></div><span>데이터 미수신</span></div><div className="attitude-empty"><Icon name="flight" size={30}/><strong>자세 정보 확인 불가</strong><span>기체가 연결되지 않았습니다</span></div><div className="metrics flight-metrics"><Metric label="Roll" unit="°"/><Metric label="Pitch" unit="°"/><Metric label="Yaw" unit="°"/><Metric label="Heading" unit="°"/></div></section><section className="flight-data"><div className="section-heading"><div><span className="eyebrow">비행 정보</span><h2>기체 상태</h2></div></div><div className="metrics flight-values"><Metric label="고도" unit="m"/><Metric label="상승 / 하강 속도" unit="m/s"/></div><dl className="state-list"><div><dt>비행 준비 상태</dt><dd>확인 불가</dd></div><div><dt>명령 상태</dt><dd>잠김</dd></div><div><dt>비행 모드</dt><dd>확인 불가</dd></div></dl><div className="command-lock"><Icon name="lock" size={16}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div></section></div></> : <div className="placeholder"><Icon name={navigation[page][0]} size={28}/><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>개발 예정</p><small>{descriptions[page]}</small></div>}
       </main>
-      {details && <aside className="soft-inspector open" aria-label="기체 정보">
-        <div className="inspector-head"><div><h1>기체 상태</h1><span>연결된 기체 없음</span></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div>
-        <div className="tabs"><span className="active">요약</span></div>
-        <div className="section-title"><div><b>비행 준비 상태</b><span>기체 연결 후 확인 가능</span></div><strong>확인 불가</strong></div>
-        <dl className="state-list">{[['텔레메트리','미연결'],['비행 모드','확인 불가'],['ARM 상태','확인 불가'],['기체 위치','확인 불가'],['GPS','미수신'],['배터리','—']].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <div className="command-lock"><Icon name="lock" size={15}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div>
-        <p className="development-note">기체 연결 기능 개발 예정</p>
-      </aside>}
+      {details && <aside className="inspector" aria-label="기체 정보"><div className="inspector-head"><div><span className="eyebrow">기체 정보</span><h2>기체 상태</h2><span>연결된 기체 없음</span></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div><div className="inspector-section"><div className="section-heading"><h3>연결 상태</h3><span className="state-badge"><Dot/>미연결</span></div><p>기체에서 수신된 데이터가 없습니다.</p></div><div className="inspector-section"><div className="section-heading"><h3>비행 준비 상태</h3><span>확인 불가</span></div><dl className="state-list">{[['텔레메트리','미연결'],['비행 모드','확인 불가'],['ARM 상태','확인 불가'],['기체 위치','확인 불가'],['GPS','미수신'],['배터리','—']].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></div><div className="inspector-section"><div className="section-heading"><h3>안전 경고</h3><span>확인 불가</span></div><p>기체 연결 전에는 안전 상태를 확인할 수 없습니다.</p></div><div className="command-lock"><Icon name="lock" size={16}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div><p className="development-note">기체 연결 기능 개발 예정</p></aside>}
       {!details && <button className="reopen-panel" onClick={()=>setDetails(true)}><Icon name="panel" size={17}/><span>기체 정보</span></button>}
     </div>
   </div></div>;
