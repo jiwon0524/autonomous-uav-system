@@ -60,3 +60,30 @@ Windows 11 x64는 네이티브 빌드 및 테스트가 필요하다. WebView2 �
 Stage 2 완료 전 실제 창과 설치 패키지 검증을 끝내야 한다. 이후 Stage 3에서는 공식 MAVSDK/PX4 문서를 검증하고 별도의 읽기 전용 연결·상태 설계, USB 탐지 및 플랫폼 권한, 명령 차단을 준비한다. 실기 시험은 프로펠러 제거 등 별도 승인된 안전 절차에서 진행한다. 이번 단계에서 드론 통신, 비행 및 파라미터 변경은 수행하지 않았다. 기존 main·보관 브랜치와 bundle을 보존하고 원격 push는 하지 않았다. 커밋 정보는 `git log -1`로 확인한다.
 
 데스크톱 초안과 관련 README·ignore 수정은 실행 검증 전이므로 커밋하지 않고 작업 트리에 남겼다. 프론트엔드 버전 표시와 이 보고서만 로컬 커밋한다.
+
+## 실행 환경 재진단
+
+`fa10c6c` 이후 남은 Tauri 초안과 README·ignore 수정은 그대로 보존했다. `getent ahosts github.com`, `registry.npmjs.org`, `index.crates.io`는 이 실행 환경에서 주소를 반환하지 않았고 `git ls-remote --heads origin`은 GitHub DNS 실패였다. `socket.socket()` 자체가 `PermissionError: [Errno 1] Operation not permitted`로 실패하므로 로컬 포트 문제는 HTTP 앱을 시작하기 이전의 샌드박스 소켓 제한이다. 샌드박스 밖 소켓 검사에 대한 권한 상승 요청은 현재 `sandbox_approval: false` 정책에 의해 자동 거부됐다. 따라서 호스트 Ubuntu 자체 네트워크 상태는 이 결과로 판정할 수 없다. `DISPLAY=:1`, X11 소켓은 존재하지만 `xdpyinfo`는 연결하지 못하며 `WAYLAND_DISPLAY`는 설정되지 않았고 `/run/user/1000/wayland-0`도 없다. 실제 사용자 GUI 세션의 디스플레이 오류라고 단정할 수 없다.
+
+설치 확인: `build-essential`, `libssl-dev`, `curl`, `wget`, `file`은 설치되어 있다. `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`는 설치되어 있지 않다. Rust/Cargo는 있으나 Tauri CLI와 Tauri crate 캐시는 없다. 공식 [Ubuntu 사전 요구사항](https://v2.tauri.app/start/prerequisites/)과 비교했다. 시스템 패키지는 설치하거나 설정을 변경하지 않았다.
+
+`npm install --no-save --package-lock=false --ignore-scripts --fetch-retries=0 --fetch-timeout=5000 @tauri-apps/cli@^2`는 `EAI_AGAIN`으로 실패했다. `cargo check --offline --manifest-path src-tauri/Cargo.toml`은 캐시에 `tauri`가 없어 실패했고 `cargo tauri build --bundles deb`는 CLI 부재로 실패했다. DEB, AppImage, SHA-256, 패키지 메타데이터 및 설치 검증 결과는 없다. 개발 서버 없이 독립 실행되는지도 미확인이다. 현재 앱은 실제 드론 백엔드가 없는 UI만 대상으로 한다.
+
+`npm run typecheck`, `npm run build`, `node tests/offline.test.mjs`는 통과했다. 이 검사는 실제 GUI 클릭이나 Tauri 창 실행을 검증하지 않는다. Tauri JSON, Rust 엔트리포인트, 아이콘과 frontendDist 초안은 이전의 JSON·형식 검사만 통과했으며 스키마 검증, Cargo 컴파일, 권한 동작, Windows 빌드는 미검증이다. 공식 설정 문서상 `capabilities: []`는 capability 디렉터리가 추가될 경우 그 파일 전체를 포함하는 기본값이므로 향후 권한 파일을 추가할 때 명시적으로 재검토해야 한다. 현재 capability 디렉터리와 플러그인은 없다. 기본 CSP는 개발에도 적용되므로 Vite 개발 모드의 동작도 실제 실행 시 확인해야 한다.
+
+일반 Ubuntu **그래픽 로그인 세션의 터미널**에서 다음 명령을 실행하면 호스트 상태를 구분하고 빠진 개발 의존성만 설치할 수 있다. `sudo` 암호는 터미널에서 직접 입력하며 기록하지 않는다.
+
+```bash
+getent ahosts github.com
+getent ahosts registry.npmjs.org
+getent ahosts index.crates.io
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+cargo install tauri-cli --version '^2' --locked
+cd /home/jiwon/autonomous-uav-system/frontend
+npm ci
+cd ..
+cargo tauri dev
+```
+
+창 확인 후 종료하고 같은 터미널에서 `cargo tauri build --bundles deb`를 실행한다. 위 작업은 이 샌드박스에서 검증되지 않았으며, 오류가 나면 오류 출력을 확인해야 한다. 네트워크 및 GUI가 가능한 환경이 확보된 후에만 설치 파일 경로·크기·SHA-256·의존성과 설치/제거를 기록할 수 있다. 네트워크 복구 전이므로 `git fetch`를 하지 않았다. `main`, `archive/pre-firescene` 및 기존 bundle은 변경하지 않았고 push하지 않았다.
