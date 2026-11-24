@@ -43,6 +43,9 @@ pub struct Snapshot {
     #[serde(skip)]
     store: crate::telemetry::Store,
     telemetry: crate::telemetry::View,
+    #[serde(skip)]
+    monitor: Arc<Mutex<crate::safety::Monitor>>,
+    safety: crate::safety::SafetyView,
 }
 #[derive(Serialize)]
 pub struct Port {
@@ -81,6 +84,8 @@ impl Default for Manager {
                 last_heartbeat_ms: None,
                 store: Default::default(),
                 telemetry: Default::default(),
+                monitor: Arc::new(Mutex::new(Default::default())),
+                safety: Default::default(),
                 error: None,
             })),
             worker: Mutex::new(None),
@@ -98,6 +103,8 @@ impl Manager {
     pub fn disconnect(&self) {
         *self.auto_allowed.lock().unwrap() = None;
         self.stop();
+        let monitor = self.snapshot.lock().unwrap().monitor.clone();
+        monitor.lock().unwrap().end_session();
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::Disconnected,
             port: None,
@@ -106,6 +113,8 @@ impl Manager {
             last_heartbeat_ms: None,
             store: Default::default(),
             telemetry: Default::default(),
+            monitor,
+            safety: Default::default(),
             error: None,
         };
     }
@@ -150,6 +159,8 @@ impl Manager {
         if !self.list()?.iter().any(|p| p.name == port) {
             return Err("목록에서 확인된 USB 직렬 포트를 선택하세요.".into());
         }
+        let monitor = self.snapshot.lock().unwrap().monitor.clone();
+        monitor.lock().unwrap().new_session("HARDWARE_LINK");
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::Connecting,
             port: Some(port.clone()),
@@ -158,6 +169,8 @@ impl Manager {
             last_heartbeat_ms: None,
             store: Default::default(),
             telemetry: Default::default(),
+            monitor,
+            safety: Default::default(),
             error: None,
         };
         let shared = self.snapshot.clone();
@@ -197,9 +210,11 @@ impl Manager {
         }
         self.connect(port, device.baud)
     }
+    #[cfg(feature = "simulation")]
     pub fn connect_simulation(&self) -> Result<(), String> {
         self.simulation_at("127.0.0.1:14540")
     }
+    #[cfg(feature = "simulation")]
     fn simulation_at(&self, address: &str) -> Result<(), String> {
         let mut worker = self.worker.lock().unwrap();
         if worker.as_ref().is_some_and(|w| !w.handle.is_finished()) {
@@ -214,6 +229,8 @@ impl Manager {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| e.to_string())?;
         let local_address = socket.local_addr().map_err(|e| e.to_string())?.to_string();
+        let monitor = self.snapshot.lock().unwrap().monitor.clone();
+        monitor.lock().unwrap().new_session("SIMULATION");
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::WaitingHeartbeat,
             port: Some(local_address),
@@ -222,6 +239,8 @@ impl Manager {
             last_heartbeat_ms: None,
             store: Default::default(),
             telemetry: Default::default(),
+            monitor,
+            safety: Default::default(),
             error: None,
         };
         let shared = self.snapshot.clone();
@@ -240,7 +259,9 @@ impl Manager {
         Ok(())
     }
     fn snapshot(&self) -> Snapshot {
-        let mut result = self.snapshot.lock().unwrap().clone();
+        let mut snapshot = self.snapshot.lock().unwrap();
+        assess(&mut snapshot);
+        let mut result = snapshot.clone();
         result.telemetry = result.store.view();
         result
     }
@@ -352,6 +373,23 @@ fn valid_vehicle(raw: &MAVLinkMessageRaw) -> Option<Vehicle> {
             .as_millis() as u64,
     })
 }
+fn assess(s: &mut Snapshot) {
+    let phase = match s.phase {
+        Phase::Disconnected => "DISCONNECTED",
+        Phase::PortDetected => "PORT_DETECTED",
+        Phase::Connecting => "CONNECTING",
+        Phase::WaitingHeartbeat => "WAITING_HEARTBEAT",
+        Phase::Connected => "CONNECTED",
+        Phase::ConnectionLost => "CONNECTION_LOST",
+        Phase::Error => "ERROR",
+    };
+    let identity = s.vehicle.as_ref().map(|v| (v.system_id, v.component_id));
+    s.safety =
+        s.monitor
+            .lock()
+            .unwrap()
+            .evaluate(phase, &s.source, &s.store.safety_view(), identity);
+}
 // Bound work per decoder call so continuous junk cannot starve timeout or disconnect.
 struct BoundedReader<R> {
     inner: R,
@@ -402,7 +440,9 @@ fn run_with_timeouts(
     receive(file, shared, cancel, wait_timeout, loss_timeout);
 }
 // Local UDP listener is intentionally receive-only and cannot select remote destinations.
+#[cfg(feature = "simulation")]
 struct UdpReader(std::net::UdpSocket);
+#[cfg(feature = "simulation")]
 impl Read for UdpReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.recv(buf)
@@ -417,6 +457,7 @@ fn receive<R: Read>(
 ) {
     let started = Instant::now();
     let mut last = None;
+    let mut last_assessment = Instant::now();
     let mut identity = None;
     let mut reader = MavlinkReader::new(BoundedReader {
         inner: input,
@@ -440,6 +481,12 @@ fn receive<R: Read>(
                         s.store.consume(&raw);
                         s.phase = Phase::Connected;
                         s.error = None;
+                        if last_assessment.elapsed() >= Duration::from_millis(250)
+                            || s.safety.session == 0
+                        {
+                            assess(&mut s);
+                            last_assessment = Instant::now();
+                        }
                     }
                 } else if let Some((sys, comp)) = identity {
                     if raw.message_id() != 0 && raw.system_id() == sys && raw.component_id() == comp
@@ -465,6 +512,7 @@ fn receive<R: Read>(
                 s.vehicle = None;
                 s.store = Default::default();
                 s.error = Some(format!("포트 읽기 중단: {e}"));
+                assess(&mut s);
                 break;
             }
         }
@@ -489,7 +537,13 @@ fn receive<R: Read>(
                 }
                 .into(),
             );
+            assess(&mut s);
             break;
+        }
+        if last_assessment.elapsed() >= Duration::from_millis(250) {
+            let mut s = shared.lock().unwrap();
+            assess(&mut s);
+            last_assessment = Instant::now();
         }
     }
 }
@@ -520,6 +574,7 @@ pub fn auto_connect_serial(
 ) -> Result<(), String> {
     manager.connect_authorized(port, device)
 }
+#[cfg(feature = "simulation")]
 #[tauri::command]
 pub fn connect_simulation(manager: tauri::State<'_, Manager>) -> Result<(), String> {
     manager.connect_simulation()
@@ -531,6 +586,18 @@ pub fn disconnect_serial(manager: tauri::State<'_, Manager>) {
 #[tauri::command]
 pub fn connection_status(manager: tauri::State<'_, Manager>) -> Snapshot {
     manager.snapshot()
+}
+
+#[tauri::command]
+pub fn simulation_available() -> bool {
+    cfg!(feature = "simulation")
+}
+
+#[tauri::command]
+pub fn acknowledge_alert(manager: tauri::State<'_, Manager>, id: u64) -> bool {
+    let monitor = manager.snapshot.lock().unwrap().monitor.clone();
+    let result = monitor.lock().unwrap().acknowledge(id);
+    result
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -582,6 +649,8 @@ mod tests {
             last_heartbeat_ms: None,
             store: Default::default(),
             telemetry: Default::default(),
+            monitor: Arc::new(Mutex::new(Default::default())),
+            safety: Default::default(),
             error: None,
         }))
     }
@@ -666,6 +735,7 @@ mod tests {
             .contains("허용하지"));
     }
     #[test]
+    #[cfg(feature = "simulation")]
     fn udp_simulation_receive_is_loopback_and_exclusive() {
         let manager = Manager::default();
         manager.simulation_at("127.0.0.1:0").unwrap();
@@ -717,6 +787,46 @@ mod tests {
         }
         let snapshot = manager.snapshot();
         assert!((snapshot.telemetry.fields["roll"].value.unwrap() - 28.6479).abs() < 0.01);
+        packet.clear();
+        let low = mavlink::dialects::common::MavMessage::SYS_STATUS(
+            mavlink::dialects::common::SYS_STATUS_DATA {
+                battery_remaining: 10,
+                voltage_battery: 12000,
+                current_battery: -1,
+                ..mavlink::dialects::common::SYS_STATUS_DATA::DEFAULT
+            },
+        );
+        mavlink::write_v1_msg(
+            &mut packet,
+            mavlink::MavHeader {
+                system_id: 42,
+                component_id: 1,
+                sequence: 2,
+            },
+            &low,
+        )
+        .unwrap();
+        sender.send_to(&packet, &target).unwrap();
+        let until = Instant::now() + Duration::from_secs(4);
+        while !manager
+            .snapshot()
+            .safety
+            .events
+            .iter()
+            .any(|e| e.code == "battery_critical" && e.resolved_ms.is_none())
+            && Instant::now() < until
+        {
+            thread::sleep(Duration::from_millis(50));
+        }
+        let alert = manager
+            .snapshot()
+            .safety
+            .events
+            .into_iter()
+            .find(|e| e.code == "battery_critical" && e.resolved_ms.is_none())
+            .expect("critical event");
+        assert_eq!(alert.source, "SIMULATION");
+        assert_eq!(alert.system_id, Some(42));
         manager.disconnect();
         assert!(matches!(manager.snapshot().phase, Phase::Disconnected));
         assert_eq!(manager.snapshot().source, "OFFLINE");

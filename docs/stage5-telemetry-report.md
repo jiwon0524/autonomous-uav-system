@@ -1,8 +1,12 @@
 # Stage 5 — 텔레메트리와 비행 계기
 
+## 사용자 확인 추가 (Stage 6)
+
+사용자가 일반 Ubuntu 환경에서 Stage 5 가상 텔레메트리 수신과 화면 연동에 성공했다고 확인했다. 이는 사용자 보고이며 이 작업에서 별도 로그·스크린샷을 확보한 것은 아니다. 실제 PX4 SITL 및 기체 검증 성공을 의미하지 않는다. Stage 6부터 개발용 시뮬레이션은 `simulation` Cargo feature가 필요하고 기본 프로덕션 빌드에는 포함되지 않는다.
+
 ## 범위 및 한계
 
-디자인 기준 `design-v1.0`, Stage 4 `945d378`에서 읽기 전용 MAVLink 수신을 확장했다. 실제 드론·무선 링크는 연결하지 않았다. 데이터 수신이 곧 장치 인증이나 실제 기체 확인을 뜻하지 않으며, SIMULATION은 사용자 지정 로컬 경로이고 HARDWARE LINK도 출처 미검증이다. 실제 GUI에서 수신 데이터가 표시되는 전체 경로, 실제 하드웨어 및 Windows는 미검증이다. 지도, 기체 제어, 데이터 요청·송신은 구현하지 않았다.
+디자인 기준 `design-v1.0`, Stage 4 `945d378`에서 읽기 전용 MAVLink 수신을 확장했다. 실제 드론·무선 링크는 연결하지 않았다. 데이터 수신이 곧 장치 인증이나 실제 기체 확인을 뜻하지 않으며, SIMULATION은 사용자 지정 로컬 경로이고 HARDWARE LINK도 출처 미검증이다. 이 자동 작업 환경에서 Tauri GUI 수신 전체 경로는 독립적으로 검증하지 못했다. 사용자의 일반 Ubuntu 확인 결과는 위에 기록했다. 실제 하드웨어 및 Windows는 미검증이다. 지도, 기체 제어, 데이터 요청·송신은 구현하지 않았다.
 
 ## 디코딩과 데이터 모델
 
@@ -48,11 +52,11 @@
 
 ## 개발용 생성기
 
-일반 Ubuntu 그래픽 세션에서 Tauri 앱을 실행하고 시스템 설정에서 **시뮬레이션 수신 시작**을 선택한 직후 별도 터미널에서:
+일반 Ubuntu 그래픽 세션에서 `cargo tauri dev --features simulation`으로 Tauri 앱을 실행하고 시스템 설정에서 **시뮬레이션 수신 시작**을 선택한 직후 별도 터미널에서:
 
 ```bash
 cd /home/jiwon/autonomous-uav-system
-cargo run --offline --manifest-path src-tauri/Cargo.toml --example telemetry_feed -- normal
+cargo run --offline --manifest-path src-tauri/Cargo.toml --features simulation --example telemetry_feed -- normal
 ```
 
 앱은 10초 내 첫 HEARTBEAT가 필요하다. 실행 도구는 `127.0.0.1:14540`에만 시험 MAVLink를 전송하고 Ctrl+C로 종료한다. `normal`, `gps-loss`, `stale-attitude`, `invalid`, `other-id`, `stop`, `corrupt` 시나리오를 선택할 수 있다. `stop` 또는 Ctrl+C 후 다시 시작하면 연결 종료 후 재시작을 시험할 수 있다. 생성기는 개발용 Cargo example이며 앱에 포함되지 않는다. 프론트엔드에 수치를 직접 주입하지 않는다.

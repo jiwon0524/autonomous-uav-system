@@ -35,3 +35,17 @@ Tauri 2 데스크톱 셸을 사용하며 독립 통신 계층은 후속 검토 �
 디자인 기준 구현은 `86971e8`이며 Aerospace Dark와 Soft Neutral Day를 사용합니다. 향후 화면은 [디자인 시스템](docs/design-system.md)과 [디자인 확정 기록](docs/design-freeze-v1.md)을 따릅니다. 사용성 또는 안전성 개선은 근거와 검증을 기록해 반영합니다.
 
 저장소 루트에서 `cargo tauri dev`로 개발 창을 실행하고 `cargo tauri build --bundles deb`로 Ubuntu 패키지를 빌드합니다. 빌드와 실제 GUI·설치 검증의 구분은 [디자인 확정 기록](docs/design-freeze-v1.md)을 참고하세요.
+
+## 안전 감시와 개발 시뮬레이션
+
+안전 관제 경고는 수신 데이터를 사용하는 개발용 보조 기능이며 PX4 failsafe를 대체하지 않습니다. 임계값은 실기체에 대해 검증되지 않았습니다. 상세 기준은 [Stage 6 보고서](docs/stage6-safety-report.md)를 확인하세요.
+
+기본 프로덕션 빌드는 가상 UDP 수신과 데이터 생성기를 포함하지 않습니다. 개발 시뮬레이션을 사용하려면 별도의 기능을 명시적으로 활성화합니다.
+
+```bash
+cargo tauri dev --features simulation
+# 별도 터미널에서, 앱의 시뮬레이션 수신 시작 후
+cargo run --offline --manifest-path src-tauri/Cargo.toml --features simulation --example telemetry_feed -- battery-low
+```
+
+기본 배포 빌드는 `cargo tauri build --bundles deb`입니다. Gazebo와 PX4 SITL은 배포 프로그램의 필수 의존성이 아닙니다.

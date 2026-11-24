@@ -61,3 +61,16 @@ test('horizon transforms use negative roll and positive pitch moves horizon down
     assert.equal(horizonTransform(-20, -10), 'translate(120 80) rotate(20) translate(0 -20)');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('safety view separates acknowledged active alerts from resolved events', async () => {
+  const dir = await mkdtemp('node_modules/.firescene-test-');
+  try {
+    const result = await build({ entryPoints: ['src/Safety.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'] });
+    const path = `${dir}/safety.mjs`; await writeFile(path, result.outputFiles[0].text);
+    const { SafetyContent } = await import(pathToFileURL(`${process.cwd()}/${path}`));
+    const base = { id:1, code:'battery_critical', severity:'CRITICAL', message:'테스트 배터리 경고', occurred_ms:1700000000000, resolved_ms:null, resolution:null, acknowledged:true, session:1, system_id:42, component_id:1, source:'SIMULATION' };
+    const state = { overall:'CRITICAL', connection:'INFORMATION', battery:'CRITICAL', gps:'UNKNOWN', sensors:'UNKNOWN', freshness:'UNKNOWN', armed:'UNKNOWN', mode:'UNKNOWN', landed:'UNKNOWN', source:'SIMULATION', session:1, events:[base,{...base,id:2,code:'old',resolved_ms:1700000001000,resolution:'관측 조건 해제',acknowledged:false}] };
+    const html=renderToStaticMarkup(React.createElement(SafetyContent,{s:state}));
+    for (const word of ['활성 경고','사용자 확인됨','종료된 경고','관측 조건 해제','SIMULATION','출처 미검증','UNKNOWN','CRITICAL']) assert.ok(html.includes(word),word);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});

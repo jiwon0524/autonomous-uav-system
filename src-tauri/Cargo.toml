@@ -4,6 +4,14 @@ version = "0.1.0"
 description = "FireScene ground control station"
 edition = "2021"
 
+[features]
+default = []
+simulation = []
+
+[[example]]
+name = "telemetry_feed"
+required-features = ["simulation"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

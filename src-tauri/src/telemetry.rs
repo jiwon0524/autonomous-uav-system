@@ -50,33 +50,41 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 impl Store {
+    fn field_views(&self) -> BTreeMap<String, Field> {
+        self.fields
+            .iter()
+            .map(|(k, e)| {
+                (
+                    k.clone(),
+                    Field {
+                        value: e.value,
+                        text: e.text.clone(),
+                        unit: e.unit,
+                        status: if e.value.is_none() && e.text.is_none() {
+                            "INVALID"
+                        } else if e.at.elapsed().as_millis() > e.ttl_ms as u128 {
+                            "STALE"
+                        } else {
+                            "LIVE"
+                        },
+                        timestamp_ms: e.timestamp_ms,
+                        source: e.source,
+                        system_id: e.sys,
+                        component_id: e.comp,
+                    },
+                )
+            })
+            .collect()
+    }
+    pub fn safety_view(&self) -> View {
+        View {
+            fields: self.field_views(),
+            graphs: BTreeMap::new(),
+        }
+    }
     pub fn view(&self) -> View {
         View {
-            fields: self
-                .fields
-                .iter()
-                .map(|(k, e)| {
-                    (
-                        k.clone(),
-                        Field {
-                            value: e.value,
-                            text: e.text.clone(),
-                            unit: e.unit,
-                            status: if e.value.is_none() && e.text.is_none() {
-                                "INVALID"
-                            } else if e.at.elapsed().as_millis() > e.ttl_ms as u128 {
-                                "STALE"
-                            } else {
-                                "LIVE"
-                            },
-                            timestamp_ms: e.timestamp_ms,
-                            source: e.source,
-                            system_id: e.sys,
-                            component_id: e.comp,
-                        },
-                    )
-                })
-                .collect(),
+            fields: self.field_views(),
             graphs: self
                 .graphs
                 .iter()
@@ -186,6 +194,15 @@ impl Store {
                     "DISARMED"
                 };
                 self.text("armed", Some(armed.into()), "HEARTBEAT", 5000, sys, comp);
+                self.put(
+                    "mav_state",
+                    Some(h.system_status as u32 as f64),
+                    "",
+                    "HEARTBEAT",
+                    5000,
+                    sys,
+                    comp,
+                );
                 let main = (h.custom_mode >> 16) & 255;
                 let sub = (h.custom_mode >> 24) & 255;
                 let mode = match main {
@@ -220,6 +237,33 @@ impl Store {
                 );
             }
             MavMessage::SYS_STATUS(m) => {
+                self.put(
+                    "sensors_present",
+                    Some(m.onboard_control_sensors_present.bits() as f64),
+                    "",
+                    "SYS_STATUS",
+                    10000,
+                    sys,
+                    comp,
+                );
+                self.put(
+                    "sensors_enabled",
+                    Some(m.onboard_control_sensors_enabled.bits() as f64),
+                    "",
+                    "SYS_STATUS",
+                    10000,
+                    sys,
+                    comp,
+                );
+                self.put(
+                    "sensors_health",
+                    Some(m.onboard_control_sensors_health.bits() as f64),
+                    "",
+                    "SYS_STATUS",
+                    10000,
+                    sys,
+                    comp,
+                );
                 self.put(
                     "battery",
                     (0..=100)
@@ -491,17 +535,28 @@ impl Store {
                 sys,
                 comp,
             ),
-            MavMessage::STATUSTEXT(m) => self.text(
-                "status_text",
-                m.text
-                    .to_str()
-                    .ok()
-                    .map(|s| format!("{:?} · {}", m.severity, s)),
-                "STATUSTEXT",
-                30000,
-                sys,
-                comp,
-            ),
+            MavMessage::STATUSTEXT(m) => {
+                self.put(
+                    "status_severity",
+                    Some(m.severity as u32 as f64),
+                    "",
+                    "STATUSTEXT",
+                    30000,
+                    sys,
+                    comp,
+                );
+                self.text(
+                    "status_text",
+                    m.text
+                        .to_str()
+                        .ok()
+                        .map(|s| format!("{:?} · {}", m.severity, s)),
+                    "STATUSTEXT",
+                    30000,
+                    sys,
+                    comp,
+                );
+            }
             _ => (),
         }
     }
@@ -585,6 +640,31 @@ mod tests {
         s.fields.get_mut("roll").unwrap().at = Instant::now() - std::time::Duration::from_secs(3);
         assert_eq!(s.view().fields["roll"].status, "STALE");
         assert_eq!(s.view().fields["pitch"].status, "LIVE");
+    }
+    #[test]
+    fn sensor_and_px4_severity_metadata_are_decoded() {
+        let mut s = Store::default();
+        let gyro = MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO;
+        s.consume(&raw(MavMessage::SYS_STATUS(SYS_STATUS_DATA {
+            onboard_control_sensors_present: gyro,
+            onboard_control_sensors_enabled: gyro,
+            onboard_control_sensors_health: MavSysStatusSensor::empty(),
+            ..SYS_STATUS_DATA::DEFAULT
+        })));
+        assert_eq!(s.view().fields["sensors_present"].value, Some(1.0));
+        assert_eq!(s.view().fields["sensors_enabled"].value, Some(1.0));
+        assert_eq!(s.view().fields["sensors_health"].value, Some(0.0));
+        s.consume(&raw(MavMessage::STATUSTEXT(STATUSTEXT_DATA {
+            severity: MavSeverity::MAV_SEVERITY_CRITICAL,
+            text: "test only".into(),
+            ..STATUSTEXT_DATA::DEFAULT
+        })));
+        assert_eq!(s.view().fields["status_severity"].value, Some(2.0));
+        assert!(s.view().fields["status_text"]
+            .text
+            .as_ref()
+            .unwrap()
+            .contains("test only"));
     }
     #[test]
     fn gps_quaternion_and_invalid_pitch() {

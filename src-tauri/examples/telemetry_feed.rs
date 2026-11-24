@@ -15,11 +15,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "other-id",
         "stop",
         "corrupt",
+        "battery-low",
+        "battery-critical",
+        "gps-stop",
+        "heartbeat-stop",
+        "multiple",
     ]
     .contains(&scenario.as_str())
     {
         return Err(
-            "scenario: normal | gps-loss | stale-attitude | invalid | other-id | stop | corrupt"
+            "scenario: normal | gps-loss | gps-stop | stale-attitude | invalid | other-id | stop | corrupt | battery-low | battery-critical | heartbeat-stop | multiple"
                 .into(),
         );
     }
@@ -44,12 +49,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 autopilot: MavAutopilot::MAV_AUTOPILOT_PX4,
                 base_mode: MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 custom_mode: 3 << 16,
+                system_status: MavState::MAV_STATE_STANDBY,
                 ..HEARTBEAT_DATA::DEFAULT
             }),
+            MavMessage::EXTENDED_SYS_STATE(EXTENDED_SYS_STATE_DATA {
+                landed_state: MavLandedState::MAV_LANDED_STATE_ON_GROUND,
+                ..EXTENDED_SYS_STATE_DATA::DEFAULT
+            }),
             MavMessage::SYS_STATUS(SYS_STATUS_DATA {
+                onboard_control_sensors_present: MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
+                    | MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_ACCEL,
+                onboard_control_sensors_enabled: MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
+                    | MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_ACCEL,
+                onboard_control_sensors_health: MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
+                    | MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_ACCEL,
                 voltage_battery: (15700.0 - t * 2.0).max(12000.0) as u16,
                 current_battery: 250,
-                battery_remaining: (90.0 - t / 10.0).max(1.0) as i8,
+                battery_remaining: if (5.0..16.0).contains(&t)
+                    && (scenario == "battery-critical" || scenario == "multiple")
+                {
+                    10
+                } else if (5.0..16.0).contains(&t) && scenario == "battery-low" {
+                    25
+                } else {
+                    85
+                },
                 ..SYS_STATUS_DATA::DEFAULT
             }),
             MavMessage::GLOBAL_POSITION_INT(GLOBAL_POSITION_INT_DATA {
@@ -62,14 +86,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..GLOBAL_POSITION_INT_DATA::DEFAULT
             }),
             MavMessage::GPS_RAW_INT(GPS_RAW_INT_DATA {
-                fix_type: if scenario == "gps-loss" && t > 8.0 {
+                fix_type: if (scenario == "gps-loss" && t > 8.0)
+                    || (scenario == "multiple" && (5.0..16.0).contains(&t))
+                {
                     GpsFixType::GPS_FIX_TYPE_NO_FIX
                 } else {
                     GpsFixType::GPS_FIX_TYPE_3D_FIX
                 },
                 lat: 375000000,
                 lon: 1270000000,
-                satellites_visible: if scenario == "gps-loss" && t > 8.0 {
+                satellites_visible: if (scenario == "gps-loss" && t > 8.0)
+                    || (scenario == "multiple" && (5.0..16.0).contains(&t))
+                {
                     0
                 } else {
                     12
@@ -90,6 +118,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }));
         }
         for msg in messages {
+            if scenario == "gps-stop" && t > 8.0 && matches!(msg, MavMessage::GPS_RAW_INT(_)) {
+                continue;
+            }
+            if scenario == "heartbeat-stop"
+                && (8.0..16.0).contains(&t)
+                && matches!(msg, MavMessage::HEARTBEAT(_))
+            {
+                continue;
+            }
             let mut frame = Vec::new();
             let h = if scenario == "other-id" && t > 8.0 && !matches!(msg, MavMessage::HEARTBEAT(_))
             {
