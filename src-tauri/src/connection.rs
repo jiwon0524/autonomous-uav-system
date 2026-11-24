@@ -40,6 +40,9 @@ pub struct Snapshot {
     vehicle: Option<Vehicle>,
     last_heartbeat_ms: Option<u64>,
     error: Option<String>,
+    #[serde(skip)]
+    store: crate::telemetry::Store,
+    telemetry: crate::telemetry::View,
 }
 #[derive(Serialize)]
 pub struct Port {
@@ -76,6 +79,8 @@ impl Default for Manager {
                 source: "OFFLINE".into(),
                 vehicle: None,
                 last_heartbeat_ms: None,
+                store: Default::default(),
+                telemetry: Default::default(),
                 error: None,
             })),
             worker: Mutex::new(None),
@@ -99,6 +104,8 @@ impl Manager {
             source: "OFFLINE".into(),
             vehicle: None,
             last_heartbeat_ms: None,
+            store: Default::default(),
+            telemetry: Default::default(),
             error: None,
         };
     }
@@ -149,6 +156,8 @@ impl Manager {
             source: "HARDWARE_LINK".into(),
             vehicle: None,
             last_heartbeat_ms: None,
+            store: Default::default(),
+            telemetry: Default::default(),
             error: None,
         };
         let shared = self.snapshot.clone();
@@ -211,6 +220,8 @@ impl Manager {
             source: "SIMULATION".into(),
             vehicle: None,
             last_heartbeat_ms: None,
+            store: Default::default(),
+            telemetry: Default::default(),
             error: None,
         };
         let shared = self.snapshot.clone();
@@ -229,7 +240,9 @@ impl Manager {
         Ok(())
     }
     fn snapshot(&self) -> Snapshot {
-        self.snapshot.lock().unwrap().clone()
+        let mut result = self.snapshot.lock().unwrap().clone();
+        result.telemetry = result.store.view();
+        result
     }
 }
 impl Drop for Manager {
@@ -424,8 +437,14 @@ fn receive<R: Read>(
                         let mut s = shared.lock().unwrap();
                         s.last_heartbeat_ms = Some(v.heartbeat_ms);
                         s.vehicle = Some(v);
+                        s.store.consume(&raw);
                         s.phase = Phase::Connected;
                         s.error = None;
+                    }
+                } else if let Some((sys, comp)) = identity {
+                    if raw.message_id() != 0 && raw.system_id() == sys && raw.component_id() == comp
+                    {
+                        shared.lock().unwrap().store.consume(&raw);
                     }
                 }
             }
@@ -444,6 +463,7 @@ fn receive<R: Read>(
                 let mut s = shared.lock().unwrap();
                 s.phase = Phase::ConnectionLost;
                 s.vehicle = None;
+                s.store = Default::default();
                 s.error = Some(format!("포트 읽기 중단: {e}"));
                 break;
             }
@@ -460,6 +480,7 @@ fn receive<R: Read>(
                 Phase::Error
             };
             s.vehicle = None;
+            s.store = Default::default();
             s.error = Some(
                 if last.is_some() {
                     "HEARTBEAT 수신 중단"
@@ -559,6 +580,8 @@ mod tests {
             source: "OFFLINE".into(),
             vehicle: None,
             last_heartbeat_ms: None,
+            store: Default::default(),
+            telemetry: Default::default(),
             error: None,
         }))
     }
@@ -654,9 +677,50 @@ mod tests {
             .unwrap();
         wait_for(&manager.snapshot, |p| matches!(p, Phase::Connected));
         assert_eq!(manager.snapshot().vehicle.unwrap().system_id, 42);
+        let target = manager.snapshot().port.unwrap();
+        let mut packet = Vec::new();
+        let attitude = mavlink::dialects::common::MavMessage::ATTITUDE(
+            mavlink::dialects::common::ATTITUDE_DATA {
+                roll: 0.5,
+                pitch: 0.25,
+                ..mavlink::dialects::common::ATTITUDE_DATA::DEFAULT
+            },
+        );
+        mavlink::write_v1_msg(
+            &mut packet,
+            mavlink::MavHeader {
+                system_id: 43,
+                component_id: 1,
+                sequence: 0,
+            },
+            &attitude,
+        )
+        .unwrap();
+        sender.send_to(&packet, &target).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert!(!manager.snapshot().telemetry.fields.contains_key("roll"));
+        packet.clear();
+        mavlink::write_v1_msg(
+            &mut packet,
+            mavlink::MavHeader {
+                system_id: 42,
+                component_id: 1,
+                sequence: 1,
+            },
+            &attitude,
+        )
+        .unwrap();
+        sender.send_to(&packet, &target).unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        while !manager.snapshot().telemetry.fields.contains_key("roll") && Instant::now() < until {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let snapshot = manager.snapshot();
+        assert!((snapshot.telemetry.fields["roll"].value.unwrap() - 28.6479).abs() < 0.01);
         manager.disconnect();
         assert!(matches!(manager.snapshot().phase, Phase::Disconnected));
         assert_eq!(manager.snapshot().source, "OFFLINE");
+        assert!(manager.snapshot().telemetry.fields.is_empty());
     }
     #[test]
     fn serial_discovery_and_invalid_selection() {

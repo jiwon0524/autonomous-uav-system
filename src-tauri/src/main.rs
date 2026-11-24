@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod connection;
+mod telemetry;
 fn main() {
     tauri::Builder::default()
         .manage(connection::Manager::default())

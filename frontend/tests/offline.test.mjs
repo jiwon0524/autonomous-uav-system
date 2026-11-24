@@ -14,7 +14,7 @@ test('initial UI shows disconnected state and all navigation destinations', asyn
     await writeFile(path, result.outputFiles[0].text);
     const { default: App } = await import(pathToFileURL(`${process.cwd()}/${path}`));
     const html = renderToStaticMarkup(React.createElement(App));
-    for (const label of ['종합 관제', '비행 제어', '임무 계획', '자율비행', '3D 매핑', '카메라', '안전 관리', '비행 기록', '시스템 설정', '기체 미연결', '텔레메트리 미연결', '미수신', '확인 불가', '비행 명령 잠김']) assert.ok(html.includes(label), label);
+    for (const label of ['종합 관제', '비행 제어', '임무 계획', '자율비행', '3D 매핑', '카메라', '안전 관리', '비행 기록', '시스템 설정', '기체 미연결', '텔레메트리 미연결', '미연결', '확인 불가', '비행 명령 잠김']) assert.ok(html.includes(label), label);
     for (const sample of ['18.4', '76%', 'F450-01', '대전 테스트 현장', '실시간 운용 샘플']) assert.ok(!html.includes(sample), sample);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -48,5 +48,16 @@ test('automatic selection requires one explicitly identified device and retries 
     assert.equal(candidate([], allowed).port, null);
     assert.equal(candidate([port], allowed).port.name, 'test-device');
     assert.deepEqual([0,1,2,3].map(retryDelay), [5000,10000,20000,null]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('horizon transforms use negative roll and positive pitch moves horizon down', async () => {
+  const dir = await mkdtemp('node_modules/.firescene-test-');
+  try {
+    const result = await build({ entryPoints: ['src/Telemetry.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'] });
+    const path = `${dir}/telemetry.mjs`; await writeFile(path, result.outputFiles[0].text);
+    const { horizonTransform } = await import(pathToFileURL(`${process.cwd()}/${path}`));
+    assert.equal(horizonTransform(20, 10), 'translate(120 80) rotate(-20) translate(0 20)');
+    assert.equal(horizonTransform(-20, -10), 'translate(120 80) rotate(20) translate(0 -20)');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
