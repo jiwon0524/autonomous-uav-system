@@ -1,5 +1,24 @@
 # Stage 2 데스크톱 통합 진행 보고
 
+## 2026-11-24 실행 경로 수정 및 검증
+
+아래의 이전 환경 진단은 당시 기록이다. 이후 일반 Ubuntu 터미널에서 개발 의존성과 Tauri CLI 2.12.6, npm 패키지 설치가 완료됐다고 확인되었다. 환경을 재설치하거나 DNS를 재조사하지 않았다.
+
+- Tauri CLI는 `frontend/package.json`을 찾아 hook 명령을 `frontend/`에서 실행한다. 기존 `npm --prefix frontend`는 `frontend/frontend/package.json`을 찾으므로 개발 및 빌드 hook을 각각 `npm run dev -- --port 1420 --strictPort`, `npm run build`로 수정했다.
+- `frontendDist`는 `src-tauri/tauri.conf.json` 기준 `../frontend/dist`이며 실제 Vite 빌드 산출물과 일치한다. `devUrl`의 `127.0.0.1:1420`은 Vite의 호스트 및 hook 포트와 일치한다. Cargo manifest와 Tauri 설정은 모두 `src-tauri/`에 있고 버전도 0.1.0으로 일치한다.
+- `npm run typecheck`, `npm run build`: 통과. UI 소스는 변경하지 않았다.
+- 샌드박스의 `cargo tauri dev`는 수정된 npm 명령과 Vite 실행까지 도달했으나 `127.0.0.1:1420` 바인딩이 `EPERM`으로 제한되었다. 샌드박스 밖에서는 Vite가 해당 주소에서 정상 시작했고 Rust 개발 빌드가 성공해 `target/debug/firescene-gcs`가 실행됐다. 창 표시와 UI 상호작용은 직접 확인하지 못했고 실행을 종료했다.
+- `cargo tauri build --no-bundle`: 수정된 빌드 hook과 Rust 릴리스 빌드가 성공하여 `src-tauri/target/release/firescene-gcs`를 생성했다. 설치 패키지 생성 및 설치는 검증하지 않았다. 최초 Cargo 빌드에서 `src-tauri/Cargo.lock`이 생성됐다.
+
+일반 Ubuntu 그래픽 세션에서 저장소 루트를 기준으로 실행한다:
+
+```bash
+cd /home/jiwon/autonomous-uav-system
+cargo tauri dev
+```
+
+창 확인 후 종료하고 같은 디렉터리에서 프로덕션 DEB 빌드를 실행한다: `cargo tauri build --bundles deb`. 실제 창과 패키지 검증 상태는 아래 과거 기록과 구분해 확인해야 한다.
+
 Stage 2는 **미완료**다. 독립 창 실행, Tauri 프로덕션 빌드, 설치 패키지 생성·설치 및 GUI 확인은 성공하지 못했다. 이 문서와 데스크톱 설정은 준비 작업이며 실행 가능한 앱으로 검증된 결과물이 아니다.
 
 ## Stage 1 GUI 재검증
