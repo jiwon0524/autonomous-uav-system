@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { version } from '../package.json';
 
 const navigation = [
   ['overview', '종합 관제'], ['flight', '비행 제어'], ['mission', '임무 계획'],
@@ -56,7 +57,7 @@ function App() {
   const [details, setDetails] = useState(true);
   return <div className="app"><div className="product soft-neutral">
     <header className="soft-header">
-      <div className="product-brand"><Mark/><b>FireScene</b></div>
+      <div className="product-brand"><Mark/><b>FireScene</b><span>GCS {version}</span></div>
       <div className="workspace-name"><b>{navigation[page][1]}</b><span>/</span><span>GCS</span></div>
       <div className="status-pill" style={{marginLeft:'auto'}}><Dot/><div><b>기체 미연결</b><span>텔레메트리 미연결</span></div></div>
     </header>
