@@ -28,6 +28,7 @@ fn main() {
             "companion_connect",
             "companion_disconnect",
             "companion_status",
+            "connect_forwarded",
             "list_serial_ports",
             "connect_serial",
             "auto_connect_serial",

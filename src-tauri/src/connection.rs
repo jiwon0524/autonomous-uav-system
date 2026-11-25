@@ -238,6 +238,9 @@ impl Manager {
     }
     #[cfg(feature = "simulation")]
     fn simulation_at(&self, address: &str) -> Result<(), String> {
+        self.udp_at(address, "SIMULATION")
+    }
+    fn udp_at(&self, address: &str, source: &str) -> Result<(), String> {
         let mut worker = self.worker.lock().unwrap();
         if worker.as_ref().is_some_and(|w| !w.handle.is_finished()) {
             return Err("기존 연결을 먼저 해제하세요.".into());
@@ -246,17 +249,17 @@ impl Manager {
             let _ = old.handle.join();
         }
         let socket = std::net::UdpSocket::bind(address)
-            .map_err(|e| format!("시뮬레이션 UDP 열기 실패: {e}"))?;
+            .map_err(|e| format!("UDP 수신 포트 열기 실패 (주소 또는 점유 상태 확인): {e}"))?;
         socket
             .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| e.to_string())?;
         let local_address = socket.local_addr().map_err(|e| e.to_string())?.to_string();
         let monitor = self.snapshot.lock().unwrap().monitor.clone();
-        monitor.lock().unwrap().new_session("SIMULATION");
+        monitor.lock().unwrap().new_session(source);
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::WaitingHeartbeat,
             port: Some(local_address),
-            source: "SIMULATION".into(),
+            source: source.into(),
             vehicle: None,
             last_heartbeat_ms: None,
             store: Default::default(),
@@ -270,7 +273,7 @@ impl Manager {
         let flag = cancel.clone();
         let handle = thread::spawn(move || {
             receive(
-                UdpReader(socket),
+                UdpReader::new(socket),
                 shared,
                 flag,
                 Duration::from_secs(10),
@@ -279,6 +282,17 @@ impl Manager {
         });
         *worker = Some(Worker { cancel, handle });
         Ok(())
+    }
+    fn connect_forwarded(&self, port: u16, route: &str) -> Result<(), String> {
+        if port == 0 {
+            return Err("1–65535 범위의 UDP 포트를 입력하세요".into());
+        }
+        let source = match route {
+            "qgc" => "QGC_FORWARD",
+            "router" => "ROUTER_FORWARD",
+            _ => return Err("지원하지 않는 수신 경로입니다".into()),
+        };
+        self.udp_at(&format!("127.0.0.1:{port}"), source)
     }
     fn summary(&self) -> ConnectionSummary {
         let mut snapshot = self.snapshot.lock().unwrap();
@@ -568,12 +582,35 @@ fn run_with_timeouts(
     receive(file, shared, cancel, wait_timeout, loss_timeout);
 }
 // Local UDP listener is intentionally receive-only and cannot select remote destinations.
-#[cfg(feature = "simulation")]
-struct UdpReader(std::net::UdpSocket);
-#[cfg(feature = "simulation")]
+struct UdpReader {
+    socket: std::net::UdpSocket,
+    packet: Vec<u8>,
+    pos: usize,
+    len: usize,
+}
+impl UdpReader {
+    fn new(socket: std::net::UdpSocket) -> Self {
+        Self {
+            socket,
+            packet: vec![0; 65535],
+            pos: 0,
+            len: 0,
+        }
+    }
+}
 impl Read for UdpReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.recv(buf)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        while self.pos == self.len {
+            self.len = self.socket.recv(&mut self.packet)?;
+            self.pos = 0;
+        }
+        let n = buf.len().min(self.len - self.pos);
+        buf[..n].copy_from_slice(&self.packet[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
     }
 }
 fn receive<R: Read>(
@@ -706,6 +743,14 @@ pub fn auto_connect_serial(
 #[tauri::command]
 pub fn connect_simulation(manager: tauri::State<'_, Manager>) -> Result<(), String> {
     manager.connect_simulation()
+}
+#[tauri::command]
+pub fn connect_forwarded(
+    manager: tauri::State<'_, Manager>,
+    port: u16,
+    route: String,
+) -> Result<(), String> {
+    manager.connect_forwarded(port, &route)
 }
 #[tauri::command]
 pub fn disconnect_serial(manager: tauri::State<'_, Manager>) {
@@ -873,6 +918,76 @@ mod tests {
             .connect_authorized("/dev/not-a-device".into(), device)
             .unwrap_err()
             .contains("허용하지"));
+    }
+    #[test]
+    fn forwarded_udp_reads_multiframe_datagram_and_is_receive_only() {
+        let manager = Manager::default();
+        assert!(manager.connect_forwarded(0, "qgc").is_err());
+        assert!(manager.connect_forwarded(14560, "invalid").is_err());
+        manager.udp_at("127.0.0.1:0", "QGC_FORWARD").unwrap();
+        let target = manager.snapshot().port.unwrap();
+        assert!(std::net::UdpSocket::bind(&target).is_err());
+        assert!(manager.udp_at("127.0.0.1:0", "ROUTER_FORWARD").is_err());
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        let mut packet = frame(12);
+        packet.extend(frame(12));
+        sender.send_to(&packet, &target).unwrap();
+        wait_for(&manager.snapshot, |p| matches!(p, Phase::Connected));
+        assert_eq!(manager.snapshot().source, "QGC_FORWARD");
+        assert_eq!(manager.snapshot().vehicle.unwrap().system_id, 42);
+        let mut reply = [0u8; 16];
+        assert!(sender.recv_from(&mut reply).is_err());
+        manager.disconnect();
+        assert!(matches!(manager.snapshot().phase, Phase::Disconnected));
+        manager.udp_at("127.0.0.1:0", "ROUTER_FORWARD").unwrap();
+        assert_eq!(manager.snapshot().source, "ROUTER_FORWARD");
+        manager.disconnect();
+    }
+    #[test]
+    fn forwarded_udp_heartbeat_loss_clears_vehicle() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_millis(30)))
+            .unwrap();
+        let addr = socket.local_addr().unwrap();
+        let s = state();
+        let shared = s.clone();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        let worker = thread::spawn(move || {
+            receive(
+                UdpReader::new(socket),
+                shared,
+                flag,
+                Duration::from_secs(2),
+                Duration::from_millis(200),
+            )
+        });
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.send_to(&frame(12), addr).unwrap();
+        wait_for(&s, |p| matches!(p, Phase::Connected));
+        wait_for(&s, |p| matches!(p, Phase::ConnectionLost));
+        assert!(s.lock().unwrap().vehicle.is_none());
+        worker.join().unwrap();
+    }
+    #[test]
+    fn udp_reader_preserves_a_datagram_across_small_reads() {
+        let receiver = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender
+            .send_to(&[1, 2, 3, 4, 5], receiver.local_addr().unwrap())
+            .unwrap();
+        let mut reader = UdpReader::new(receiver);
+        let mut b = [0; 2];
+        assert_eq!(reader.read(&mut b).unwrap(), 2);
+        assert_eq!(b, [1, 2]);
+        assert_eq!(reader.read(&mut b).unwrap(), 2);
+        assert_eq!(b, [3, 4]);
+        assert_eq!(reader.read(&mut b).unwrap(), 1);
+        assert_eq!(b[0], 5);
     }
     #[test]
     #[cfg(feature = "simulation")]
