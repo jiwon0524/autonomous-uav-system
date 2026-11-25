@@ -1,0 +1,15 @@
+import {strict as assert} from 'node:assert';
+import {sameLocation,missionAfterMapChange,selectedMissionIfPresent} from '../src/workflow.ts';
+const a={id:'b1',name:'A',address:'addr',center:[127,37],geometry:{type:'Point',coordinates:[127,37]},radius:50};
+const b={...a,center:[127.1,37],id:'b2',name:'B'};
+const mission={id:'m1',name:'임무 A',status:'SAVED',selection:a};
+assert.equal(sameLocation(a,structuredClone(a)),true);
+assert.equal(missionAfterMapChange(mission,structuredClone(a)),mission);
+assert.equal(missionAfterMapChange(mission,b),null);
+assert.equal(missionAfterMapChange(mission,{...a,radius:100}),null);
+assert.equal(missionAfterMapChange(mission,null),null);
+assert.equal(missionAfterMapChange(null,a),null);
+const stored=[{id:'m1',name:'임무 A'},{id:'m2',name:'임무 B'}];
+assert.equal(selectedMissionIfPresent('m1',stored),stored[0]);
+assert.equal(selectedMissionIfPresent('deleted',stored),null);
+assert.equal(selectedMissionIfPresent(null,stored),null);

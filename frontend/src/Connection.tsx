@@ -1,9 +1,10 @@
+import { withConnectionDeadline } from './connectionDeadline';
 import { autoKey, lastKey, load, candidate, retryDelay, shouldScanPorts, ordered, save, setPermission, type Device, type Port } from './auto';
 import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 export type Connection = { phase: string; source: string; port: string | null; error: string | null; last_heartbeat_ms: number | null; vehicle: { system_id: number; component_id: number; vehicle_type: number; autopilot_type: number; mavlink_version: number; heartbeat_ms: number } | null };
 export const initialConnection: Connection = { phase: 'DISCONNECTED', source: 'OFFLINE', port: null, vehicle: null, error: null, last_heartbeat_ms: null };
-export const phaseText: Record<string, string> = { DISCONNECTED: '미연결', PORT_DETECTED: '포트 감지', CONNECTING: '포트 열기 중', WAITING_HEARTBEAT: 'HEARTBEAT 대기', CONNECTED: 'PX4 HEARTBEAT 수신', CONNECTION_LOST: '연결 끊김', ERROR: '연결 오류' };
+export const phaseText: Record<string, string> = { DISCONNECTED: '미연결', PORT_DETECTED: '포트 감지', CONNECTING: '포트 열기 중', WAITING_HEARTBEAT: 'HEARTBEAT 대기', CONNECTED: 'PX4 HEARTBEAT 수신', CONNECTION_LOST: '연결 끊김', ERROR: '연결 오류', UNKNOWN: '연결 상태 확인 불가' };
 export const sourceText = (s: Connection) => { const prior = ['DISCONNECTED','PORT_DETECTED','ERROR','CONNECTION_LOST'].includes(s.phase) ? 'OFFLINE · 마지막 경로: ' : ''; return s.source === 'SIMULATION' ? `${prior}SIMULATION · 사용자 지정 · 출처 미검증` : s.source === 'HARDWARE_LINK' ? `${prior}직접 직렬 · 출처 미검증` : s.source === 'QGC_FORWARD' ? `${prior}QGroundControl 전달 (사용자 선택) · 출처 미검증` : s.source === 'ROUTER_FORWARD' ? `${prior}Router 전달 (사용자 선택) · 출처 미검증` : 'OFFLINE'; };
 export function useConnection() {
   const [connection, setConnection] = useState<Connection>(initialConnection); const [ports, setPorts] = useState<Port[]>([]);
@@ -16,7 +17,7 @@ export function useConnection() {
     if (import.meta.env?.DEV) void invoke<boolean>('simulation_available').then(v=>{ if (active) setSimulationAvailable(v); }).catch(()=>{});
     void setPermission(autoRef.current).catch(e => { if (active) setError(String(e)); });
     const tick = async () => { if (ticking || !active) return; ticking = true; try {
-      const state = await invoke<Connection>('connection_summary');
+      const state = await withConnectionDeadline(invoke<Connection>('connection_summary'),1500);
       if (!active) return; setConnection(state);
       if (!shouldScanPorts(state.phase)) { setScan('기체 연결 중 · 장치 탐색 대기'); return; }
       const found = await invoke<Port[]>('list_serial_ports');
@@ -27,7 +28,7 @@ export function useConnection() {
       if (Date.now() < nextAttempt.current) { setRetry('재연결 간격 대기'); return; }
       attempts.current++; nextAttempt.current = Date.now() + delay; setRetry(`자동 연결 시도 ${attempts.current}/3`);
       await ordered(async () => { if (active && autoRef.current === d) await invoke('auto_connect_serial', { port: choice.port!.name, device: d }); });
-    } catch (e) { if (active) { setScan('탐색 또는 연결 오류'); setError(String(e)); } } finally { ticking = false; } };
+    } catch (e) { if (active) { setConnection({...initialConnection,phase:'UNKNOWN'}); setScan('탐색 또는 연결 오류'); setError(String(e)); } } finally { ticking = false; } };
     void tick(); const timer = window.setInterval(() => void tick(), 2000); return () => { active = false; window.clearInterval(timer); };
   }, []);
   const configure = async (device: Device | null) => { autoRef.current = device; setAuto(device); save(autoKey,device); attempts.current=0; nextAttempt.current=0; setRetry(device ? '허용 장치 대기' : '자동 연결 꺼짐'); try { await setPermission(device); setError(''); } catch(e) { autoRef.current=null; setAuto(null); save(autoKey,null); setError(String(e)); } };

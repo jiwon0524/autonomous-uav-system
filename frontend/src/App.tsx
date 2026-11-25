@@ -5,7 +5,8 @@ import { RecordingBadge } from './RecordingStatus';
 import { SafetyBanner, SafetyPage } from './Safety';
 import { LiveStrip, OverviewTelemetry, LiveEvents, LiveInspector, FlightInstruments } from './Telemetry';
 import { ConnectionSettings, phaseText, sourceText, useConnection } from './Connection';
-import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
+import { missionAfterMapChange, type SelectedMission } from './workflow';
 const Spatial = lazy(() => import('./Spatial').then(m => ({default:m.Spatial})));
 const Camera = lazy(() => import('./Camera').then(m => ({default:m.Camera})));
 const MissionPage = lazy(() => import('./Missions').then(m => ({default:m.MissionPage})));
@@ -62,11 +63,13 @@ const descriptions = [
 function App() {
   const [page, setPage] = useState(0);
   const [mapSelection,setMapSelection] = useState<MapSelection|null>(null);
+  const [selectedMission,setSelectedMission] = useState<SelectedMission|null>(null);
+  const selectMapLocation=useCallback((selection:MapSelection|null)=>{setMapSelection(selection);setSelectedMission(m=>missionAfterMapChange(m,selection));},[]);
   const [missionDirty,setMissionDirty] = useState(false);
   const control = useConnection();
   const connection = control.connection;
   const connected = connection.phase === 'CONNECTED' && !!connection.vehicle;
-  const status = connected ? 'PX4 HEARTBEAT 수신' : phaseText[connection.phase] || '미연결';
+  const status = connected ? 'PX4 HEARTBEAT 수신' : connection.phase === 'CONNECTED' ? '기체 식별 확인 불가' : ['DISCONNECTED','PORT_DETECTED'].includes(connection.phase) ? '기체 미연결' : phaseText[connection.phase] || '확인 불가';
   const [details, setDetails] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'day'>('dark');
   function navigate(next:number) { if (page===2 && next!==2 && missionDirty && !window.confirm('저장하지 않은 임무 변경사항이 있습니다. 이동하시겠습니까?')) return; setPage(next); }
@@ -74,18 +77,18 @@ function App() {
     <header className="header">
       <div className="product-brand"><Mark/><div><b>FireScene <em>GCS</em></b><span>Ground Control Station · {version}</span></div></div>
       <div className="header-context"><span>작업 공간</span><b>{navigation[page][1]}</b></div>
-      <div className="header-status"><Dot tone={connected ? 'good' : 'muted'}/><div><b>{connected ? status : '기체 미연결'}</b><span>{connected ? `${connection.source === 'SIMULATION' ? 'SIMULATION' : 'LIVE'} · ${sourceText(connection)}` : 'OFFLINE · 텔레메트리 미연결'}</span></div></div>
+      <div className="header-status"><Dot tone={connected ? 'good' : 'muted'}/><div><b>{status}</b><span>{connection.phase==='UNKNOWN' ? 'UNKNOWN · 상태 조회 실패' : connection.source==='OFFLINE' ? 'OFFLINE · 텔레메트리 미연결' : sourceText(connection)}</span></div></div>
       <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'day' : 'dark')} aria-label={theme === 'dark' ? 'Day 테마로 변경' : 'Dark 테마로 변경'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17}/><span>{theme === 'dark' ? 'Day' : 'Dark'}</span></button>
     </header>
     <div className="status-strip" aria-label="주요 비행 상태"><div><span>연결</span><b>{status}</b></div><LiveStrip/><SafetyBanner onSelect={()=>navigate(6)}/><RecordingBadge/><div className="strip-lock"><Icon name="lock" size={14}/> 명령 잠김</div></div>
     <div className={`body ${details ? '' : 'panel-closed'}`}>
       <nav className="nav-rail" aria-label="주 메뉴"><div className="nav-label">메뉴</div>{navigation.map(([icon,label],i)=><button key={icon} title={label} aria-label={label} aria-current={page === i ? 'page' : undefined} className={page === i ? 'active' : ''} onClick={()=>navigate(i)}><Icon name={icon}/><span>{label}</span></button>)}<div className="nav-foot">FireScene<br/><span>운용 화면</span></div></nav>
       <main className="workspace">
-        {page === 0 ? <><div className="workspace-heading"><div><span className="eyebrow">운용 개요</span><h1>종합 관제</h1><p>기체와 임무의 현재 상태</p></div><span className="source-label">{connected ? '비행 데이터 미수신' : '데이터 소스 없음'}</span></div>
-          <MapView source={connection.source} initialSelection={mapSelection} onSelection={setMapSelection}/>
+        {page === 0 ? <><div className="workspace-heading"><div><span className="eyebrow">운용 개요</span><h1>종합 관제</h1><p>기체와 임무의 현재 상태</p></div><span className="source-label">{connected ? '기체 데이터 수신 중' : '데이터 소스 없음'}</span></div>
+          <MapView source={connection.source} initialSelection={mapSelection} onSelection={selectMapLocation}/>
           <section className="telemetry-section"><div className="section-heading"><div><span className="eyebrow">기체 데이터</span><h2>현재 비행 정보</h2></div><span>데이터별 수신 상태</span></div><OverviewTelemetry/></section>
-          <div className="overview-lower"><section><div className="section-heading"><h2>현재 임무</h2><span>정보 없음</span></div><p>표시할 임무가 없습니다</p><small>임무 연결 후 진행 상태를 확인할 수 있습니다.</small></section><section><div className="section-heading"><h2>최근 이벤트</h2><span>최신 상태 메시지</span></div><LiveEvents/></section></div>
-        </> : page === 1 ? <><div className="workspace-heading"><div><span className="eyebrow">기체 운용</span><h1>비행 제어</h1><p>자세 및 비행 상태</p></div><span className="source-label">{connected ? '비행 데이터 미수신' : '데이터 소스 없음'}</span></div><FlightInstruments/></> : page === 2 ? <Suspense fallback={<PageLoading/>}><MissionPage source={connection.source} sharedSelection={mapSelection} onSharedSelection={setMapSelection} onDirtyChange={setMissionDirty}/></Suspense> : page === 4 ? <Suspense fallback={<PageLoading/>}><Spatial selection={mapSelection}/></Suspense> : page === 5 ? <Suspense fallback={<PageLoading/>}><Camera/></Suspense> : page === 6 ? <SafetyPage/> : page === 7 ? <Suspense fallback={<PageLoading/>}><Recordings/></Suspense> : page === 8 ? <><ConnectionSettings control={control}/><Companion settings/><MapSettings/></> : page >= 3 && page <= 5 ? <><div className="workspace-heading"><div><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>{descriptions[page]}</p></div><span className="source-label">개발 예정</span></div><Companion page={navigation[page][1]}/></> : <div className="placeholder"><Icon name={navigation[page][0]} size={28}/><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>개발 예정</p><small>{descriptions[page]}</small></div>}
+          <div className="overview-lower"><section><div className="section-heading"><h2>선택한 임무</h2><span>{selectedMission ? selectedMission.status : '미선택'}</span></div><p>{selectedMission?.name || '선택한 임무가 없습니다'}</p><small>{selectedMission ? `저장된 임무 · ${selectedMission.selection?.name || '대상 미지정'} · 진행 상태 미연동` : '임무 계획에서 저장된 임무를 선택하세요.'}</small></section><section><div className="section-heading"><h2>최근 이벤트</h2><span>최신 상태 메시지</span></div><LiveEvents/></section></div>
+        </> : page === 1 ? <><div className="workspace-heading"><div><span className="eyebrow">기체 운용</span><h1>비행 제어</h1><p>자세 및 비행 상태</p></div><span className="source-label">{connected ? '기체 데이터 수신 중' : '데이터 소스 없음'}</span></div><FlightInstruments/></> : page === 2 ? <Suspense fallback={<PageLoading/>}><MissionPage source={connection.source} sharedSelection={mapSelection} selectedMission={selectedMission} onSelectedMission={setSelectedMission} onSharedSelection={setMapSelection} onDirtyChange={setMissionDirty}/></Suspense> : page === 4 ? <Suspense fallback={<PageLoading/>}><Spatial selection={mapSelection}/></Suspense> : page === 5 ? <Suspense fallback={<PageLoading/>}><Camera/></Suspense> : page === 6 ? <SafetyPage/> : page === 7 ? <Suspense fallback={<PageLoading/>}><Recordings selectedMissionId={selectedMission?.id ?? null}/></Suspense> : page === 8 ? <><ConnectionSettings control={control}/><Companion settings/><MapSettings/></> : page >= 3 && page <= 5 ? <><div className="workspace-heading"><div><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>{descriptions[page]}</p></div><span className="source-label">개발 예정</span></div><Companion page={navigation[page][1]}/></> : <div className="placeholder"><Icon name={navigation[page][0]} size={28}/><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>개발 예정</p><small>{descriptions[page]}</small></div>}
         {(page===0 || page===1) && <ManualPreview key={page}/>}
       </main>
       {details && <aside className="inspector" aria-label="기체 정보"><div className="inspector-head"><div><span className="eyebrow">기체 정보</span><h2>기체 상태</h2><span>{connected ? 'PX4 HEARTBEAT 확인' : '연결된 기체 없음'}</span></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div><div className="inspector-section"><div className="section-heading"><h3>연결 상태</h3><span className="state-badge"><Dot tone={connected ? 'good' : 'muted'}/>{status}</span></div><p>{connected ? 'HEARTBEAT 수신 중 · 송신자 인증되지 않음' : '기체에서 수신된 데이터가 없습니다.'}</p></div><div className="inspector-section"><div className="section-heading"><h3>비행 준비 상태</h3><span>확인 불가</span></div><LiveInspector/></div><div className="inspector-section"><div className="section-heading"><h3>안전 경고</h3></div><SafetyBanner onSelect={()=>navigate(6)}/></div><div className="command-lock"><Icon name="lock" size={16}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div><p className="development-note">읽기 전용 연결 · 비행 명령 비활성</p></aside>}

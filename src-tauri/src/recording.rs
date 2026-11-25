@@ -786,7 +786,7 @@ mod tests {
             initial,
             dir.clone(),
             "test".into(),
-            None,
+            Some("mission-1".into()),
         )
         .unwrap();
         assert!(begin_recording(
@@ -812,6 +812,12 @@ mod tests {
         let path = path(&dir, status.id.as_deref().unwrap()).unwrap();
         let (summary, records) = scan(&path, 0, 10000, 100, false).unwrap();
         assert!(!summary.incomplete);
+        assert_eq!(summary.mission_id.as_deref(), Some("mission-1"));
+        let missions = dir.join("missions.json");
+        fs::write(&missions, b"synthetic").unwrap();
+        fs::remove_file(missions).unwrap();
+        let (after_deletion, _) = scan(&path, 0, 10000, 100, false).unwrap();
+        assert_eq!(after_deletion.mission_id.as_deref(), Some("mission-1"));
         assert_eq!(summary.warnings, 1);
         let safety_events: Vec<_> = records.iter().filter(|v| v["type"] == "event").collect();
         assert_eq!(safety_events.len(), 2);

@@ -14,8 +14,8 @@ test('recording status subscribers share polling and ignore late completion afte
   const {subscribeRecordingStatus,recordingStatusSnapshot}=await import(pathToFileURL(`${process.cwd()}/${path}`));
   let first=0,second=0;const off1=subscribeRecordingStatus(()=>first++),off2=subscribeRecordingStatus(()=>second++);
   assert.equal(resolvers.length,1);resolvers.shift()({active:true,id:'1',started_ms:1,bytes:10,error:null});await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(first,1);assert.equal(second,1);assert.equal(recordingStatusSnapshot().active,true);assert.equal(deadlineCleared,1);
-  off1();assert.equal(cleared,0);interval();assert.equal(resolvers.length,1);off2();assert.equal(cleared,1);assert.equal(recordingStatusSnapshot().active,false);
+  assert.equal(first,1);assert.equal(second,1);assert.equal(recordingStatusSnapshot().active,true);assert.equal(recordingStatusSnapshot().reachable,true);assert.equal(deadlineCleared,1);
+  off1();assert.equal(cleared,0);interval();assert.equal(resolvers.length,1);off2();assert.equal(cleared,1);assert.equal(recordingStatusSnapshot().active,false);assert.equal(recordingStatusSnapshot().reachable,false);
   resolvers.shift()({active:true,id:'late',started_ms:1,bytes:10,error:null});await new Promise(resolve=>setImmediate(resolve));assert.equal(recordingStatusSnapshot().active,false);assert.equal(second,1);
  } finally {globalThis.window=original;globalThis.isTauri=originalTauri;await rm(dir,{recursive:true,force:true});}
 });
