@@ -1,4 +1,6 @@
 import { MapView, MapSettings, type MapSelection } from './MapView';
+import { FirstRun } from './FirstRun';
+import { initialTheme, needsFirstRun, saveTheme, type Theme } from './setupPreferences';
 import { Companion } from './Companion';
 import { ManualPreview } from './ManualPreview';
 import { RecordingBadge } from './RecordingStatus';
@@ -46,7 +48,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 }
 
 function Mark() {
-  return <div className="mark"><span /><i /></div>;
+  return <img className="brand-mark" src="/firescene-mark.png" alt=""/>;
 }
 
 function Dot({ tone = 'muted' }: { tone?: 'good' | 'warn' | 'danger' | 'muted' }) {
@@ -73,9 +75,11 @@ function App() {
   const [details, setDetails] = useState(true);
   const [navExpanded, setNavExpanded] = useState(true);
   const [context, setContext] = useState<'현장'|'기체'|'안전'|'조종'>('현장');
-  const [theme, setTheme] = useState<'dark' | 'day'>('dark');
+  const [theme, setThemeState] = useState<Theme>(()=>typeof window === 'undefined' ? 'dark' : initialTheme());
+  const [firstRun,setFirstRun] = useState(()=>typeof window !== 'undefined' && needsFirstRun());
+  function setTheme(next:Theme) {setThemeState(next);saveTheme(next);}
   function navigate(next:number) { if (page===2 && next!==2 && missionDirty && !window.confirm('저장하지 않은 임무 변경사항이 있습니다. 이동하시겠습니까?')) return; setPage(next); }
-  return <div className={`app theme-${theme}`}><div className="product">
+  return <div className={`app theme-${theme}`}><div className="product" inert={firstRun || undefined}>
     <header className="header">
       <div className="product-brand"><Mark/><div><b>FireScene <em>GCS</em></b><span>Ground Control Station · {version}</span></div></div>
       <div className="header-context"><span>현재 임무</span><b>{selectedMission?.name || '선택한 임무 없음'}</b></div>
@@ -101,6 +105,6 @@ function App() {
 
       {!details && <button className="reopen-panel" onClick={()=>setDetails(true)}><Icon name="panel" size={17}/><span>기체 정보</span></button>}
     </div>
-  </div></div>;
+  </div>{firstRun && <FirstRun theme={theme} onTheme={setTheme} onClose={()=>setFirstRun(false)}/>}</div>;
 }
 export default App;

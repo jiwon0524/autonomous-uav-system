@@ -50,7 +50,11 @@
           "Korean",
           "English"
         ],
-        "startMenuFolder": "FireScene GCS"
+        "startMenuFolder": "FireScene GCS",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "uninstallerHeaderImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp"
       }
     },
     "linux": {
