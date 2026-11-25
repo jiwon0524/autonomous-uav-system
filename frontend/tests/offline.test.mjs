@@ -74,5 +74,7 @@ test('safety view separates acknowledged active alerts from resolved events', as
     const state = { overall:'CRITICAL', connection:'INFORMATION', battery:'CRITICAL', gps:'UNKNOWN', sensors:'UNKNOWN', freshness:'UNKNOWN', armed:'UNKNOWN', mode:'UNKNOWN', landed:'UNKNOWN', source:'SIMULATION', session:1, events:[base,{...base,id:2,code:'old',resolved_ms:1700000001000,resolution:'관측 조건 해제',acknowledged:false}] };
     const html=renderToStaticMarkup(React.createElement(SafetyContent,{s:state}));
     for (const word of ['활성 경고','사용자 확인됨','종료된 경고','관측 조건 해제','SIMULATION','출처 미검증','UNKNOWN','CRITICAL']) assert.ok(html.includes(word),word);
+    const ordered=renderToStaticMarkup(React.createElement(SafetyContent,{s:{...state,events:[{...base,id:3,severity:'CAUTION',message:'주의 이벤트'},base]}}));
+    assert.ok(ordered.indexOf('테스트 배터리 경고') < ordered.indexOf('주의 이벤트'), 'critical event precedes caution event');
   } finally { await rm(dir,{recursive:true,force:true}); }
 });

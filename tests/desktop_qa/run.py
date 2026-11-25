@@ -94,6 +94,8 @@ try:
  sid=response['sessionId']; wait_for("return !!document.querySelector('nav[aria-label=\"주 메뉴\"]')",20)
  def first_run():
   wait_for("return !!document.querySelector('.first-run[role=dialog]')")
+  wait_for("return document.activeElement?.closest('.first-run') !== null")
+  assert js("const d=document.querySelector('.first-run'),b=d.querySelectorAll('button');b[0].focus();b[0].dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));return document.activeElement===b[b.length-1]")
   screenshot('first-run-ko')
   click_text('English'); wait_for("return document.querySelector('#first-run-title')?.innerText==='Welcome to FireScene GCS'")
   assert js("return document.querySelector('.first-run')?.innerText.includes('rest of the application is currently available in Korean')")
@@ -124,8 +126,19 @@ try:
   menu('종합 관제',0); click_text('전체 화면'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면 종료')")
   click_text('전체 화면 종료'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면')")
  check('native fullscreen',native_fullscreen)
+ def spatial_controls():
+  menu('3D 매핑',4); js("document.querySelector('.spatial-connection summary').click()")
+  wait_for("return !!document.querySelector('.spatial-connection[open] input')")
+  state=js("const c=document.querySelector('.spatial-canvas canvas');const gl=c.getContext('webgl');return {webgl:!!gl,width:c.width,height:c.height,clientWidth:c.clientWidth,clientHeight:c.clientHeight,dpr:Math.min(devicePixelRatio||1,2)}")
+  if not state['webgl']: raise RuntimeError('WebGL unavailable in this environment')
+  assert abs(state['width']-round(state['clientWidth']*state['dpr']))<=1 and abs(state['height']-round(state['clientHeight']*state['dpr']))<=1, state
+  click_text('3D 매핑 집중 보기')
+  wait_for("const c=document.querySelector('.spatial-canvas canvas');return Math.abs(c.width-Math.round(c.clientWidth*Math.min(devicePixelRatio||1,2)))<=1")
+  click_text('일반 보기')
+  return 'connection controls accessible; WebGL backing size follows focus resize'
+ check('3D controls and WebGL resize',spatial_controls)
  if args.matrix:
-  for width,height in [(910,512),(1366,768),(1440,900),(1920,1080),(2560,1440)]:
+  for width,height in [(910,512),(1093,614),(1366,768),(1440,900),(1920,1080),(2560,1440)]:
    def matrix_size(width=width,height=height):
     command('POST','/window/rect',{'width':width,'height':height})
     rect=command('GET','/window/rect')
@@ -136,6 +149,13 @@ try:
       menu(name,i)
       state=js("const s=document.querySelector('.status-strip'),l=document.querySelector('.strip-lock'),a=document.querySelector('.safety-banner');const within=e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight};return {lock:within(l),safety:within(a),strip:s.scrollWidth<=s.clientWidth+1,viewport:[innerWidth,innerHeight]}")
       if not (state['lock'] and state['safety'] and state['strip']): raise AssertionError(f'{name} {theme} {state}')
+      if name=='종합 관제' and width<=1150:
+       map_width=js("return document.querySelector('.overview-shell .map-real').getBoundingClientRect().width")
+       assert map_width >= width-110, f'map too narrow: {map_width}'
+       click_text('상황 정보'); wait_for("return !!document.querySelector('.overview-context')")
+       click_text('상황 정보'); wait_for("return !document.querySelector('.overview-context')")
+       click_text('메뉴 펼치기'); wait_for("return document.querySelector('.nav-toggle')?.getAttribute('aria-expanded')==='true'")
+       click_text('메뉴 접기'); wait_for("return document.querySelector('.nav-toggle')?.getAttribute('aria-expanded')==='false'")
       if name!='시스템 설정': screenshot(f'matrix-{width}x{height}-{theme}-{i}')
      if theme=='day': click_text('Dark')
     return f'window {width}x{height}; both themes, nine menus; safety and lock in viewport'
@@ -176,6 +196,7 @@ try:
   js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}))")
   wait_for("return !!document.querySelector('.manual-keys .active')")
   click_text('전체 화면'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
+  wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면 종료')")
   click_text('전체 화면 종료'); time.sleep(1); click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
   click_text('현장'); click_text('입력 미리보기'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
   return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout, fullscreen and panel switch reset'
@@ -204,6 +225,12 @@ try:
   eid=element['element-6066-11e4-a52e-4f735466cecf']; command('POST','/element/'+eid+'/clear',{}); command('POST','/element/'+eid+'/value',{'text':'/tmp/does-not-exist/QGroundControl.AppImage'})
   click_text('QGroundControl 실행'); wait_for("return document.body.innerText.includes('실행 파일을 찾을 수 없습니다')")
  check('QGroundControl missing executable error',qgc_error)
+ def settings_groups():
+  menu('시스템 설정',8); click_text('지도 서비스')
+  wait_for("const e=document.querySelector('#settings-map'),w=document.querySelector('.workspace');return e && w && e.getBoundingClientRect().top < w.getBoundingClientRect().bottom && w.scrollTop>0")
+  click_text('기체 연결'); wait_for("const e=document.querySelector('#settings-aircraft'),w=document.querySelector('.workspace');return e && w && e.getBoundingClientRect().top < w.getBoundingClientRect().bottom")
+  return 'map and aircraft shortcuts reach their settings'
+ check('settings groups',settings_groups)
  def draft_mission():
   menu('임무 계획',2); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='새 임무'&&!e.disabled)")
   click_text('새 임무'); wait_for("return !!document.querySelector('.mission-fields input')")
@@ -223,6 +250,13 @@ try:
    wait_for("return document.body.innerText.includes('42 / 1')",15)
    return 'development feed system 42, simulation receiver'
   check('simulation heartbeat receive',sim_connect)
+  def compact_live_status():
+   command('POST','/window/rect',{'width':910,'height':512}); menu('종합 관제',0)
+   wait_for("return document.querySelector('.status-strip')?.innerText.includes('시뮬레이션')")
+   assert js("return document.querySelector('.status-strip .safety-banner')?.getAttribute('aria-label')?.includes(' · ')")
+   assert js("const s=document.querySelector('.status-strip'),a=s.querySelector('.safety-banner'),l=s.querySelector('.strip-lock');const inside=e=>{const r=e.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight};return s.scrollWidth<=s.clientWidth+1&&inside(a)&&inside(l)")
+   command('POST','/window/rect',{'width':1200,'height':800})
+  check('compact live source and safety',compact_live_status)
   def overview_telemetry():
    menu('종합 관제',0); wait_for("return document.querySelector('.overview-flight-values')?.innerText.includes('m') && document.body.innerText.includes('PX4 HEARTBEAT 수신')")
   check('overview live telemetry',overview_telemetry)
