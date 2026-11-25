@@ -1,4 +1,4 @@
-import { autoKey, lastKey, load, candidate, retryDelay, ordered, save, setPermission, type Device, type Port } from './auto';
+import { autoKey, lastKey, load, candidate, retryDelay, shouldScanPorts, ordered, save, setPermission, type Device, type Port } from './auto';
 import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 export type Connection = { phase: string; source: string; port: string | null; error: string | null; last_heartbeat_ms: number | null; vehicle: { system_id: number; component_id: number; vehicle_type: number; autopilot_type: number; mavlink_version: number; heartbeat_ms: number } | null };
@@ -16,8 +16,11 @@ export function useConnection() {
     if (import.meta.env?.DEV) void invoke<boolean>('simulation_available').then(v=>{ if (active) setSimulationAvailable(v); }).catch(()=>{});
     void setPermission(autoRef.current).catch(e => { if (active) setError(String(e)); });
     const tick = async () => { if (ticking || !active) return; ticking = true; try {
-      const [state, found] = await Promise.all([invoke<Connection>('connection_status'), invoke<Port[]>('list_serial_ports')]);
-      if (!active) return; setConnection(state); setPorts(found); setScan(`탐색 중 · USB 직렬 ${found.length}개`);
+      const state = await invoke<Connection>('connection_summary');
+      if (!active) return; setConnection(state);
+      if (!shouldScanPorts(state.phase)) { setScan('기체 연결 중 · 장치 탐색 대기'); return; }
+      const found = await invoke<Port[]>('list_serial_ports');
+      if (!active) return; setPorts(found); setScan(`탐색 중 · USB 직렬 ${found.length}개`);
       const d = autoRef.current; if (!d || state.source === 'SIMULATION' || ['CONNECTING','WAITING_HEARTBEAT','CONNECTED'].includes(state.phase)) return;
       const choice = candidate(found,d); if (!choice.port) { setRetry(choice.ambiguous ? '식별 정보 중복 · 자동 연결 중지' : '허용 장치 대기'); return; }
       const delay = retryDelay(attempts.current); if (delay === null) { setRetry('재시도 3회 종료 · 다시 활성화 필요'); return; }

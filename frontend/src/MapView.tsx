@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import Map from 'ol/Map';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
@@ -15,7 +15,7 @@ import { incidentArea } from './mapGeometry';
 import { getCenter } from 'ol/extent';
 import LineString from 'ol/geom/LineString';
 import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style';
-import { useTelemetry } from './Telemetry';
+import { useGpsTelemetry } from './Telemetry';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 const keyName = 'firescene.vworld.key', centerName = 'firescene.map.center';
@@ -35,14 +35,14 @@ export function MapSettings() {
 type SearchItem = { title: string; address?: {road?: string; parcel?: string}; point: { x: string; y: string } };
 export type MapSelection = {name:string; address:string; id:string; center:number[]; geometry:object|null; radius:number};
 type SearchResponse = { status?: string; error?: {code?: string}; result?: {items?: SearchItem[]} };
-export function MapView({ source, initialSelection, onSelection, radiusOverride }: { source: string; initialSelection?: MapSelection | null; onSelection?: (selection:MapSelection|null)=>void; radiusOverride?: number }) {
+export const MapView = memo(function MapView({ source, initialSelection, onSelection, radiusOverride }: { source: string; initialSelection?: MapSelection | null; onSelection?: (selection:MapSelection|null)=>void; radiusOverride?: number }) {
   const target = useRef<HTMLDivElement>(null); const mapRef = useRef<Map | null>(null); const savedView = useRef<{center:number[];zoom:number}|undefined>(undefined);
   const buildingFeatures = useRef(new VectorSource()); const areaFeatures = useRef(new VectorSource()); const buildingRequest = useRef(0); const lastBuildingRequest = useRef(0);
   const [building,setBuilding] = useState<Omit<MapSelection,'radius'>|null>(()=>initialSelection ? {name:initialSelection.name,address:initialSelection.address,id:initialSelection.id,center:initialSelection.center,geometry:initialSelection.geometry} : null); const [buildingStatus,setBuildingStatus] = useState(initialSelection ? '저장된 현장 위치' : '지도에서 건물을 선택하세요'); const [radius,setRadius] = useState(initialSelection?.radius ?? 50);
   const features = useRef(new VectorSource()); const searchFeatures = useRef(new VectorSource()); const requestId = useRef(0); const lastRequest = useRef(0);
   const [query,setQuery] = useState(''); const [kind,setKind] = useState('road'); const [results,setResults] = useState<SearchItem[]>([]); const [searchStatus,setSearchStatus] = useState(''); const track = useRef<number[][]>([]); const trackIdentity = useRef(''); const lastTimestamp = useRef(0); const lastLive = useRef(false);
   const [layer, setLayer] = useState<'Base'|'Satellite'>('Base'); const [status, setStatus] = useState('지도 준비'); const [coords, setCoords] = useState(initialCenter); const [follow, setFollow] = useState(false);
-  const [key,setKey] = useState(''); const { fields } = useTelemetry();
+  const [key,setKey] = useState(''); const fields = useGpsTelemetry();
   const [map3dEnabled,setMap3dEnabled] = useState(false); const [map3dOpen,setMap3dOpen] = useState(false); const [map3dStatus,setMap3dStatus] = useState('3D 실험 기능 비활성');
   useEffect(() => { let alive=true; let generation=0; let unlisten: (()=>void)|undefined; if (isTauri()) void (async()=>{ try { const enabled=await invoke<boolean>('map3d_available'); if (!enabled || !alive) return; const stop=await listen('map3d-closed',()=>{ if (!alive) return; generation++; setMap3dOpen(false); setMap3dStatus('3D 창 종료 · 2D 복원'); }); if (!alive) { stop(); return; } unlisten=stop; const currentGeneration=generation; const opened=await invoke<boolean>('map3d_is_open'); if (!alive) return; if (generation === currentGeneration) { setMap3dOpen(opened); setMap3dStatus(opened ? '3D 창 열림 · 로딩 및 권한 미검증' : '3D 실험 기능 · 검증 필요'); } setMap3dEnabled(true); } catch { if(alive) setMap3dStatus('3D 상태 확인 실패'); } })(); return ()=>{ alive=false; unlisten?.(); }; }, []);
   useEffect(() => { if (isTauri()) void invoke<string>('load_map_key').then(v=>setKey(v || localStorage.getItem(keyName) || '')).catch(()=>setStatus('지도 설정 읽기 실패')); else setKey(localStorage.getItem(keyName) || ''); }, []);
@@ -131,4 +131,4 @@ export function MapView({ source, initialSelection, onSelection, radiusOverride 
     setFollow(false); mapRef.current?.getView().animate({center:position,zoom:17,duration:250});
   }
   return <section className="map-area map-real" aria-label="지도 작업 공간"><div className="map-toolbar"><b>관제 지도</b><button disabled={!map3dEnabled || map3dOpen} onClick={()=>void open3d()} title={map3dStatus}>3D 실험</button><button disabled={map3dOpen} onClick={()=>setLayer('Base')} aria-pressed={layer==='Base'}>기본</button><button disabled={map3dOpen} onClick={()=>setLayer('Satellite')} aria-pressed={layer==='Satellite'}>위성</button><button disabled={map3dOpen} onClick={()=>{mapRef.current?.getView().setCenter(fromLonLat(initialCenter())); mapRef.current?.getView().setZoom(15); setFollow(false);}}>초기화</button><button disabled={!live || map3dOpen} onClick={()=>{if(live) mapRef.current?.getView().setCenter(fromLonLat([lon.value!,lat.value!]));}}>GPS 원시 위치</button><label><input type="checkbox" disabled={map3dOpen} checked={follow} onChange={e=>setFollow(e.target.checked)}/> GPS 추적</label></div><div className="map-search"><select value={kind} onChange={e=>{requestId.current++; setResults([]); setSearchStatus(''); setKind(e.target.value);}} aria-label="검색 종류"><option value="road">도로명</option><option value="parcel">지번</option><option value="place">장소</option></select><input value={query} onChange={e=>{requestId.current++; setResults([]); setSearchStatus(''); setQuery(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter') void search();}} placeholder="주소 또는 장소 검색" aria-label="주소 또는 장소 검색"/><button onClick={()=>void search()}>검색</button><span role="status">{searchStatus}</span>{results.length > 0 && <div className="map-results">{results.map((item,i)=><button key={i} onClick={()=>{selectResult(item); setResults([]);}}>{item.title} · {item.address?.road || item.address?.parcel || '주소 없음'}</button>)}</div>}</div><div className="map-canvas" ref={target}>{!key && <div className="map-empty"><strong>VWorld API 키가 설정되지 않았습니다</strong><span>시스템 설정에서 키를 입력하세요. 인터넷 연결이 필요합니다.</span></div>}</div><div className="map-info"><span>{buildingStatus}{building ? ` · ${building.name} · ${building.address} · ${building.id}` : ''}</span>{building && <><button onClick={()=>setRadius(50)}>50 m</button><button onClick={()=>setRadius(100)}>100 m</button><label>반경 m <input type="number" min="1" max="2000" value={radius} onChange={e=>setRadius(Number(e.target.value))}/></label><button onClick={()=>mapRef.current?.getView().setCenter(fromLonLat(building.center))}>건물 중심</button><button onClick={()=>{setBuilding(null); buildingFeatures.current.clear(); areaFeatures.current.clear();}}>현장 초기화</button><span>조회 범위 · 비행 안전거리 아님</span></>}<span>{map3dStatus}</span><span>{key ? status : '지도 미연결'}</span><span>중심 {coords[1].toFixed(5)}, {coords[0].toFixed(5)}</span><span>{live ? `GPS 원시 위치 · 경로 최대 500점 · ${source === 'SIMULATION' ? '시뮬레이션' : '하드웨어 링크'} · ${new Date(lat.timestamp_ms).toLocaleTimeString()} · 출처 미검증` : 'GPS 원시 위치 미수신 또는 오래됨'}</span><span>지도 출처: VWorld</span></div></section>;
-}
+});

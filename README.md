@@ -1,51 +1,54 @@
 # FireScene GCS
 
-FireScene GCS는 실제 드론 관제를 위한 데스크톱 앱의 초기 프론트엔드입니다. 현재 화면은 Aerospace Dark를 기본으로 하며 Soft Neutral Day 테마를 지원합니다. 기체 통신, 실제 지도와 비행 명령은 구현되지 않았습니다.
+FireScene GCS는 소방 현장 공간정보, 임무 계획, 수신 텔레메트리와 안전 경고를 확인하는 Tauri 2 데스크톱 앱입니다. Aerospace Dark와 Soft Neutral Day를 지원합니다. 기체 연결은 읽기 전용이며 ARM, 이륙, 착륙, 임무 업로드와 비행 명령은 구현하지 않았습니다. 안전 감시는 개발 중인 보조 기능으로 기체의 failsafe를 대체하지 않습니다.
 
-## 개발 환경 및 실행
+VWorld 2D 지도·검색, 임무 로컬 저장, 초당 스냅샷 비행 기록과 별도 재생 화면이 구현되어 있습니다. 실제 지도 GUI, 실제 기체 및 Windows 장치 검증은 아직 완료되지 않았습니다. 3D 지도 실험 기능은 기본적으로 비활성입니다. 자세한 제한은 [통합 검증 체크리스트](docs/integration-validation-checklist.md)와 각 단계 보고서를 확인하세요.
 
-Node.js와 npm이 필요합니다. 저장소 루트에서:
+## Ubuntu 설치와 실행
 
-```bash
-cd frontend
-npm ci
-npm run dev
+Ubuntu 24.04 amd64용 DEB가 제공된 경우 파일 위치에서 다음을 실행합니다.
+
+```sh
+sudo apt install ./FireScene\ GCS_0.1.0_amd64.deb
 ```
 
-브라우저에서 Vite가 표시하는 로컬 주소를 엽니다. 검증 명령:
+설치 후 애플리케이션 메뉴에서 **FireScene GCS**를 실행합니다. DEB는 운영체제의 WebKitGTK 등 필요한 라이브러리에 의존하며 패키지 관리자가 설치합니다. 일반 사용자가 프로그램을 실행하며, 프로그램 전체를 관리자 권한으로 실행할 필요는 없습니다. 설치된 장치가 `/dev/ttyACM0`라면 `ls -l /dev/ttyACM0`와 `groups`로 접근 권한을 확인하세요. 해당 장치가 `dialout` 그룹 소유인 일반적인 Ubuntu 설정에서는 관리자가 사용자를 추가할 수 있습니다.
 
-```bash
-npm run typecheck
-npm run build
-node tests/offline.test.mjs
+```sh
+sudo usermod -aG dialout "$USER"
 ```
 
-왼쪽 메뉴에서 9개 작업 공간을 선택할 수 있습니다. 비행 제어는 미수신 상태 화면이며 나머지 기능은 개발 예정입니다. 수신된 기체 데이터가 없으므로 연결 상태, 위치, 모드 및 ARM 상태는 미연결 또는 확인 불가로 표시합니다. 실제 명령이나 기체 연결 기능은 없습니다.
+그룹 변경은 로그아웃 후 다시 로그인해야 적용됩니다. 실제 장치 이름·그룹과 조직 정책을 먼저 확인하세요. 연결 시험은 프로펠러를 제거하고 비행 명령이 잠긴 상태에서 진행합니다.
 
-## 구조
+## Windows 설치
 
-- `frontend/`: React/TypeScript 관제 UI 및 초기 상태 검사
-- `docs/`: 개발 기록
-- `references/`: 로컬 전용 Figma 및 리서치 원본. 공개 및 커밋 전 별도 검토 필요
+Windows 11 x64용 NSIS 설치 파일은 아직 생성·검증되지 않았습니다. Windows 빌드 워크플로는 수동 실행용으로 준비되어 있으며 실제 CI 실행은 수행하지 않았습니다. Tauri 설치 설정은 Microsoft Edge WebView2 오프라인 설치 프로그램을 포함하도록 지정합니다. Windows 장치에는 해당 USB-직렬 장치의 공급업체 드라이버가 필요할 수 있습니다. 읽기 전용 COM 열기 구현과 포트 점유·재연결은 실제 Windows 및 해당 드라이버에서 검증해야 합니다. 드라이버가 읽기 전용 열기 또는 설정을 거부하면 연결은 실패하며 쓰기 가능한 핸들로 자동 전환하지 않습니다. [Tauri Windows 설치 문서](https://v2.tauri.app/distribute/windows-installer/)를 참고하세요.
 
-Tauri 2 데스크톱 셸을 사용하며 독립 통신 계층은 후속 검토 대상입니다. ROS2는 현재 실행에 필요하지 않습니다. 실제 기체 명령은 향후 UI와 백엔드 양쪽에서 차단 정책을 마련하고 검증하기 전까지 구현하지 않습니다.
+최종 사용자는 앱을 실행하기 위해 Python, Node.js, npm, Rust, Cargo, ROS2, Gazebo, PX4 SITL 또는 QGroundControl을 별도 설치할 필요가 없습니다. 운영체제 런타임, 지도 인터넷 연결 및 장치 드라이버는 필요할 수 있습니다.
 
-## 공식 디자인 및 데스크톱
+## 지도와 로컬 데이터
 
-디자인 기준 구현은 `86971e8`이며 Aerospace Dark와 Soft Neutral Day를 사용합니다. 향후 화면은 [디자인 시스템](docs/design-system.md)과 [디자인 확정 기록](docs/design-freeze-v1.md)을 따릅니다. 사용성 또는 안전성 개선은 근거와 검증을 기록해 반영합니다.
+VWorld 키는 시스템 설정에서 입력·변경합니다. 클라이언트 키는 로컬 파일과 지도 요청에 노출될 수 있으므로 완전한 비밀로 취급할 수 없습니다. 사용 도메인 및 이용 조건은 발급처에서 확인하고 배포 전 키를 교체하세요. 임무와 기록은 키와 분리된 사용자 데이터 디렉터리에 저장됩니다. 비행 기록은 초당 스냅샷이며 모든 원본 MAVLink 프레임이나 짧은 변화를 보존하지 않습니다. 상세 제한은 [Stage 9 보고서](docs/stage9-flight-recording-report.md)를 참고하세요.
 
-저장소 루트에서 `cargo tauri dev`로 개발 창을 실행하고 `cargo tauri build --bundles deb`로 Ubuntu 패키지를 빌드합니다. 빌드와 실제 GUI·설치 검증의 구분은 [디자인 확정 기록](docs/design-freeze-v1.md)을 참고하세요.
+## 개발 및 테스트
 
-## 안전 감시와 개발 시뮬레이션
+개발 머신에는 Node.js 22, Rust와 Tauri 플랫폼 의존성이 필요합니다. 저장소 루트에서:
 
-안전 관제 경고는 수신 데이터를 사용하는 개발용 보조 기능이며 PX4 failsafe를 대체하지 않습니다. 임계값은 실기체에 대해 검증되지 않았습니다. 상세 기준은 [Stage 6 보고서](docs/stage6-safety-report.md)를 확인하세요.
+```sh
+npm --prefix frontend ci
+npm --prefix frontend test
+npm --prefix frontend run build
+cargo test --offline --manifest-path src-tauri/Cargo.toml
+cargo tauri dev
+cargo tauri build --bundles deb -- --offline
+```
 
-기본 프로덕션 빌드는 가상 UDP 수신과 데이터 생성기를 포함하지 않습니다. 개발 시뮬레이션을 사용하려면 별도의 기능을 명시적으로 활성화합니다.
+`cargo tauri`는 별도 설치된 Tauri CLI가 필요합니다. 기본 빌드는 개발용 UDP 수신, 텔레메트리 생성기와 3D 실험 feature를 켜지 않습니다. 개발용 시뮬레이션만 별도로 시험할 때:
 
-```bash
+```sh
 cargo tauri dev --features simulation
-# 별도 터미널에서, 앱의 시뮬레이션 수신 시작 후
+# 별도 터미널에서, 시뮬레이션 수신 시작 후
 cargo run --offline --manifest-path src-tauri/Cargo.toml --features simulation --example telemetry_feed -- battery-low
 ```
 
-기본 배포 빌드는 `cargo tauri build --bundles deb`입니다. Gazebo와 PX4 SITL은 배포 프로그램의 필수 의존성이 아닙니다.
+[디자인 시스템](docs/design-system.md)과 [디자인 확정 기록](docs/design-freeze-v1.md)을 유지합니다. `.github/workflows/desktop-build.yml`은 수동 실행용이며 외부 CI 실행이나 원격 push를 수행하지 않았습니다.

@@ -38,7 +38,7 @@ test('automatic selection requires one explicitly identified device and retries 
   try {
     const result = await build({ entryPoints: ['src/auto.ts'], bundle: true, write: false, platform: 'node', format: 'esm' });
     const path = `${dir}/auto.mjs`; await writeFile(path, result.outputFiles[0].text);
-    const { candidate, retryDelay } = await import(pathToFileURL(`${process.cwd()}/${path}`));
+    const { candidate, retryDelay, shouldScanPorts } = await import(pathToFileURL(`${process.cwd()}/${path}`));
     const allowed = { vid: 1, pid: 2, serial: 'TEST-ONLY', baud: 115200 };
     const port = { name: 'test-device', vid: 1, pid: 2, serial_number: 'TEST-ONLY' };
     assert.equal(candidate([], allowed).port, null);
@@ -48,6 +48,7 @@ test('automatic selection requires one explicitly identified device and retries 
     assert.equal(candidate([], allowed).port, null);
     assert.equal(candidate([port], allowed).port.name, 'test-device');
     assert.deepEqual([0,1,2,3].map(retryDelay), [5000,10000,20000,null]);
+    assert.equal(shouldScanPorts('CONNECTED'), false); assert.equal(shouldScanPorts('CONNECTION_LOST'), true); assert.equal(shouldScanPorts('DISCONNECTED'), true);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -56,9 +57,10 @@ test('horizon transforms use negative roll and positive pitch moves horizon down
   try {
     const result = await build({ entryPoints: ['src/Telemetry.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'] });
     const path = `${dir}/telemetry.mjs`; await writeFile(path, result.outputFiles[0].text);
-    const { horizonTransform } = await import(pathToFileURL(`${process.cwd()}/${path}`));
+    const { horizonTransform, createGpsSelector } = await import(pathToFileURL(`${process.cwd()}/${path}`));
     assert.equal(horizonTransform(20, 10), 'translate(120 80) rotate(-20) translate(0 20)');
     assert.equal(horizonTransform(-20, -10), 'translate(120 80) rotate(20) translate(0 -20)');
+    const select=createGpsSelector(); const gps={value:37,status:'LIVE',timestamp_ms:1}; const first=select({gps_lat:gps}); assert.equal(select({gps_lat:{...gps},battery:{value:42}}),first); assert.notEqual(select({gps_lat:{...gps,timestamp_ms:2}}),first);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

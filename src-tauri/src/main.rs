@@ -18,6 +18,7 @@ fn main() {
         recording::recording_status,
         recording::list_recordings,
         recording::read_recording,
+        recording::read_recording_window,
         recording::recording_events,
         recording::rename_recording,
         recording::delete_recording,
@@ -38,6 +39,7 @@ fn main() {
         connection::connect_simulation,
         connection::disconnect_serial,
         connection::connection_status,
+        connection::connection_summary,
         connection::acknowledge_alert,
         connection::simulation_available
     ]);
@@ -48,6 +50,7 @@ fn main() {
         recording::recording_status,
         recording::list_recordings,
         recording::read_recording,
+        recording::read_recording_window,
         recording::recording_events,
         recording::rename_recording,
         recording::delete_recording,
@@ -67,6 +70,7 @@ fn main() {
         connection::set_auto_device,
         connection::disconnect_serial,
         connection::connection_status,
+        connection::connection_summary,
         connection::acknowledge_alert,
         connection::simulation_available
     ]);

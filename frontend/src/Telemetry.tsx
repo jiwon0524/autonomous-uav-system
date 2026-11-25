@@ -9,10 +9,42 @@ export type SafetyView = { reachable?:boolean; overall:string; connection:string
 export const emptySafety: SafetyView = { reachable:false,overall:'UNKNOWN',connection:'UNKNOWN',battery:'UNKNOWN',gps:'UNKNOWN',sensors:'UNKNOWN',freshness:'UNKNOWN',armed:'UNKNOWN',mode:'UNKNOWN',landed:'UNKNOWN',source:'OFFLINE',session:0,events:[] };
 let safetyCurrent=emptySafety;
 
-const empty: View = { fields:{},graphs:{},connected:false }; let current=empty; let timer: number | undefined; let inflight=false; const listeners=new Set<()=>void>();
-function subscribe(fn:()=>void) { listeners.add(fn); if (listeners.size===1 && isTauri()) { const update=async()=>{ if(inflight) return; inflight=true; try { const state=await Promise.race([invoke<Connection & {telemetry:View; safety:SafetyView}>('connection_status'), new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error('상태 조회 시간 초과')),1500))]); current=state.phase==='CONNECTED' ? {...state.telemetry,connected:true} : empty; safetyCurrent=state.safety ? {...state.safety,reachable:true} : emptySafety; } catch { current=empty; safetyCurrent={...safetyCurrent,reachable:false,overall:'UNKNOWN',connection:'UNKNOWN',battery:'UNKNOWN',gps:'UNKNOWN',sensors:'UNKNOWN',freshness:'UNKNOWN',armed:'UNKNOWN',mode:'UNKNOWN',landed:'UNKNOWN'}; } finally { inflight=false; listeners.forEach(f=>f()); } }; void update(); timer=window.setInterval(()=>void update(),500); } return ()=>{ listeners.delete(fn); if(!listeners.size && timer!==undefined) { clearInterval(timer); timer=undefined; current=empty; safetyCurrent=emptySafety; } }; }
+const empty: View = { fields:{},graphs:{},connected:false }; let current=empty; let timer: number | undefined; let inflight=false; let generation=0; const listeners=new Set<()=>void>();
+function subscribe(fn:()=>void) {
+  listeners.add(fn);
+  if (listeners.size===1 && isTauri()) {
+    const token=++generation;
+    const update=async()=>{
+      if(inflight) return; inflight=true; let deadline:number|undefined;
+      try {
+        const state=await Promise.race([invoke<Connection & {telemetry:View; safety:SafetyView}>('connection_status'), new Promise<never>((_,reject)=>{deadline=window.setTimeout(()=>reject(new Error('상태 조회 시간 초과')),1500);})]);
+        if(token!==generation)return;
+        current=state.phase==='CONNECTED' ? {...state.telemetry,connected:true} : empty; safetyCurrent=state.safety ? {...state.safety,reachable:true} : emptySafety;
+      } catch {
+        if(token!==generation)return;
+        current=empty; safetyCurrent={...safetyCurrent,reachable:false,overall:'UNKNOWN',connection:'UNKNOWN',battery:'UNKNOWN',gps:'UNKNOWN',sensors:'UNKNOWN',freshness:'UNKNOWN',armed:'UNKNOWN',mode:'UNKNOWN',landed:'UNKNOWN'};
+      } finally {
+        if(deadline!==undefined)window.clearTimeout(deadline); inflight=false; if(token===generation)listeners.forEach(f=>f());
+      }
+    };
+    void update(); timer=window.setInterval(()=>void update(),500);
+  }
+  return ()=>{ listeners.delete(fn); if(!listeners.size) { generation++; if(timer!==undefined)window.clearInterval(timer); timer=undefined; current=empty; safetyCurrent=emptySafety; } };
+}
 export function useSafety() { return useSyncExternalStore(subscribe,()=>safetyCurrent,()=>emptySafety); }
 export function useTelemetry() { return useSyncExternalStore(subscribe,()=>current,()=>empty); }
+export function createGpsSelector() {
+  let lastKey=''; let selected:Record<string,Field>={};
+  return (fields:Record<string,Field>) => {
+    const lat=fields.gps_lat, lon=fields.gps_lon;
+    const key=JSON.stringify([lat||null,lon||null]);
+    if(key!==lastKey) { lastKey=key; selected={}; if(lat)selected.gps_lat=lat;if(lon)selected.gps_lon=lon; }
+    return selected;
+  };
+}
+const selectGps=createGpsSelector();
+export function useGpsTelemetry() { return useSyncExternalStore(subscribe,()=>selectGps(current.fields),()=>selectGps(empty.fields)); }
+
 const label=(f:Field|undefined) => !f ? (current.connected ? '미수신' : '미연결') : f.status==='STALE' ? '오래됨' : f.status==='INVALID' ? '무효' : '';
 function val(f:Field|undefined, digits=1) { return f?.status==='LIVE' ? f.text ?? (f.value===null ? '—' : f.value.toFixed(digits)) : '—'; }
 function Cell({name,field,digits=1}:{name:string;field?:Field;digits?:number}) { return <div className="metric"><span>{name}</span><div><strong>{val(field,digits)}</strong><small>{field?.unit || ''}</small></div><small className="data-status">{label(field)}</small></div>; }

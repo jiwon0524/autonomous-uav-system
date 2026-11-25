@@ -48,6 +48,15 @@ pub struct Snapshot {
     safety: crate::safety::SafetyView,
 }
 #[derive(Serialize)]
+pub struct ConnectionSummary {
+    phase: Phase,
+    port: Option<String>,
+    source: String,
+    vehicle: Option<Vehicle>,
+    last_heartbeat_ms: Option<u64>,
+    error: Option<String>,
+}
+#[derive(Serialize)]
 pub struct Port {
     name: String,
     manufacturer: Option<String>,
@@ -271,6 +280,18 @@ impl Manager {
         *worker = Some(Worker { cancel, handle });
         Ok(())
     }
+    fn summary(&self) -> ConnectionSummary {
+        let mut snapshot = self.snapshot.lock().unwrap();
+        assess(&mut snapshot);
+        ConnectionSummary {
+            phase: snapshot.phase.clone(),
+            port: snapshot.port.clone(),
+            source: snapshot.source.clone(),
+            vehicle: snapshot.vehicle.clone(),
+            last_heartbeat_ms: snapshot.last_heartbeat_ms,
+            error: snapshot.error.clone(),
+        }
+    }
     pub(crate) fn snapshot(&self) -> Snapshot {
         let mut snapshot = self.snapshot.lock().unwrap();
         assess(&mut snapshot);
@@ -346,7 +367,101 @@ fn open_readonly(path: &str, baud: u32) -> io::Result<std::fs::File> {
     }
     Ok(f)
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(windows, test))]
+fn windows_com_path(port: &str) -> io::Result<String> {
+    let upper = port.to_ascii_uppercase();
+    let number = upper
+        .strip_prefix("COM")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "COM 포트 형식 오류"))?;
+    if number.is_empty()
+        || number.len() > 5
+        || !number.bytes().all(|b| b.is_ascii_digit())
+        || number.parse::<u16>().ok().filter(|n| *n > 0).is_none()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "COM 포트 형식 오류",
+        ));
+    }
+    Ok(format!(r"\\.\{upper}"))
+}
+#[cfg(windows)]
+struct WindowsSerial(std::fs::File);
+#[cfg(windows)]
+impl Read for WindowsSerial {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.0.read(buf) {
+            Ok(0) if !buf.is_empty() => Err(io::ErrorKind::WouldBlock.into()),
+            other => other,
+        }
+    }
+}
+#[cfg(windows)]
+fn open_readonly(port: &str, baud: u32) -> io::Result<WindowsSerial> {
+    use std::{
+        ffi::OsStr,
+        os::windows::{
+            ffi::OsStrExt,
+            io::{AsRawHandle, FromRawHandle},
+        },
+        ptr,
+    };
+    use windows_sys::Win32::{
+        Devices::Communication::{
+            BuildCommDCBW, GetCommState, SetCommState, SetCommTimeouts, COMMTIMEOUTS, DCB,
+        },
+        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{CreateFileW, OPEN_EXISTING},
+    };
+    if ![57600, 115200, 230400, 460800, 921600].contains(&baud) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "baud"));
+    }
+    let path = windows_com_path(port)?;
+    let wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(Some(0)).collect();
+    // Exclusive, synchronous, GENERIC_READ only. Never fall back to a writable handle.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            GENERIC_READ,
+            0,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let file = unsafe { std::fs::File::from_raw_handle(handle.cast()) };
+    let raw = file.as_raw_handle().cast();
+    let mut dcb = DCB::default();
+    dcb.DCBlength = std::mem::size_of::<DCB>() as u32;
+    if unsafe { GetCommState(raw, &mut dcb) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let config: Vec<u16> = format!("baud={baud} parity=n data=8 stop=1")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    if unsafe { BuildCommDCBW(config.as_ptr(), &mut dcb) } == 0
+        || unsafe { SetCommState(raw, &dcb) } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let timeout = COMMTIMEOUTS {
+        ReadIntervalTimeout: u32::MAX,
+        ReadTotalTimeoutMultiplier: 0,
+        ReadTotalTimeoutConstant: 0,
+        WriteTotalTimeoutMultiplier: 0,
+        WriteTotalTimeoutConstant: 0,
+    };
+    if unsafe { SetCommTimeouts(raw, &timeout) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(WindowsSerial(file))
+}
+#[cfg(not(any(target_os = "linux", windows)))]
 fn open_readonly(_: &str, _: u32) -> io::Result<std::fs::File> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -597,6 +712,10 @@ pub fn disconnect_serial(manager: tauri::State<'_, Manager>) {
     manager.disconnect();
 }
 #[tauri::command]
+pub fn connection_summary(manager: tauri::State<'_, Manager>) -> ConnectionSummary {
+    manager.summary()
+}
+#[tauri::command]
 pub fn connection_status(manager: tauri::State<'_, Manager>) -> Snapshot {
     manager.snapshot()
 }
@@ -723,6 +842,14 @@ mod tests {
         bad[11] ^= 1;
         let mut reader = MavlinkReader::new(std::io::Cursor::new(bad));
         assert!(reader.read_any_raw_message::<MavMessage>().is_err());
+    }
+    #[test]
+    fn lightweight_connection_summary_excludes_telemetry_and_safety() {
+        let manager = Manager::default();
+        let value = serde_json::to_value(manager.summary()).unwrap();
+        assert_eq!(value["phase"], "DISCONNECTED");
+        assert!(value.get("telemetry").is_none());
+        assert!(value.get("safety").is_none());
     }
     #[test]
     fn auto_connect_requires_explicit_allowlist() {
@@ -966,5 +1093,25 @@ mod tests {
         wait_for(&s, |p| matches!(p, Phase::WaitingHeartbeat));
         c.store(true, Ordering::SeqCst);
         h.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod port_validation_tests {
+    use super::windows_com_path;
+    #[test]
+    fn windows_port_names_are_strict_and_cannot_select_arbitrary_files() {
+        assert_eq!(windows_com_path("COM3").unwrap(), r"\\.\COM3");
+        assert_eq!(windows_com_path("com256").unwrap(), r"\\.\COM256");
+        for value in [
+            "COM0",
+            "COM65536",
+            "COM1/../x",
+            "\\\\.\\COM1",
+            "/dev/ttyUSB0",
+            "COM1\0",
+        ] {
+            assert!(windows_com_path(value).is_err());
+        }
     }
 }

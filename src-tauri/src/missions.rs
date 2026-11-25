@@ -275,7 +275,12 @@ mod tests {
             .join(format!(
                 "firescene-missions-test-{}-{}",
                 std::process::id(),
-                std::thread::current().name().unwrap_or("test")
+                std::thread::current()
+                    .name()
+                    .unwrap_or("test")
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                    .collect::<String>()
             ))
             .join("missions.json")
     }

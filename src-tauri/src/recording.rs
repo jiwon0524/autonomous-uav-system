@@ -522,6 +522,110 @@ fn read_recording_sync(
         truncated,
     })
 }
+#[derive(Serialize)]
+pub struct WindowPage {
+    records: Vec<Value>,
+    truncated: bool,
+}
+fn read_window_path(
+    p: &Path,
+    id: &str,
+    from: u64,
+    to: u64,
+    max: usize,
+) -> Result<WindowPage, String> {
+    if to < from || to - from > 600_000 {
+        return Err("조회 범위 오류".into());
+    }
+    if fs::metadata(p)
+        .map_err(|_| "기록 파일을 읽을 수 없습니다")?
+        .len()
+        > MAX_BYTES
+    {
+        return Err("기록 파일 크기 초과".into());
+    }
+    let mut reader = BufReader::new(File::open(p).map_err(|_| "기록 파일을 읽을 수 없습니다")?);
+    let mut line = Vec::new();
+    let mut header = false;
+    let mut previous = 0;
+    let mut records = Vec::new();
+    let mut truncated = false;
+    loop {
+        line.clear();
+        let n = (&mut reader)
+            .take((MAX_LINE + 1) as u64)
+            .read_until(b'\n', &mut line)
+            .map_err(|_| "기록 읽기 실패")?;
+        if n == 0 {
+            break;
+        }
+        if line.len() > MAX_LINE {
+            return Err("기록 데이터 크기 오류".into());
+        }
+        if !line.ends_with(b"\n") {
+            break;
+        }
+        let value: Value =
+            serde_json::from_slice(&line).map_err(|_| "기록 파일이 손상되었습니다")?;
+        match value["type"].as_str() {
+            Some("header") if !header => {
+                let name = value["name"].as_str().ok_or("기록 이름 오류")?;
+                let source = value["source"].as_str().unwrap_or("UNKNOWN");
+                if value["version"] != 1
+                    || value["id"].as_str() != Some(id)
+                    || !valid_id(id)
+                    || name.trim().is_empty()
+                    || name.len() > 240
+                    || source.len() > 64
+                {
+                    return Err("기록 헤더 오류".into());
+                }
+                header = true;
+            }
+            Some("sample" | "event" | "connection") if header => {
+                let time = value["elapsed_ms"].as_u64().ok_or("기록 시각 오류")?;
+                if time < previous {
+                    return Err("기록 순서가 올바르지 않습니다".into());
+                }
+                previous = time;
+                if time > to {
+                    break;
+                }
+                if time >= from {
+                    if records.len() >= max {
+                        truncated = true;
+                        break;
+                    }
+                    records.push(value);
+                }
+            }
+            Some("end") if header => {
+                let time = value["elapsed_ms"].as_u64().ok_or("기록 종료 시각 오류")?;
+                if time < previous || value["ended_ms"].as_u64().is_none() {
+                    return Err("기록 종료 시각 오류".into());
+                }
+                break;
+            }
+            _ => return Err("기록 형식 오류".into()),
+        }
+    }
+    if !header {
+        return Err("기록 헤더가 없습니다".into());
+    }
+    Ok(WindowPage { records, truncated })
+}
+#[tauri::command]
+pub async fn read_recording_window(
+    app: tauri::AppHandle,
+    id: String,
+    from: u64,
+    to: u64,
+) -> Result<WindowPage, String> {
+    let file = path(&directory(&app)?, &id)?;
+    tauri::async_runtime::spawn_blocking(move || read_window_path(&file, &id, from, to, 1600))
+        .await
+        .map_err(|_| "기록 조회 작업 실패")?
+}
 fn recording_events_sync(app: tauri::AppHandle, id: String) -> Result<Vec<Value>, String> {
     let (_, records) = scan(&path(&directory(&app)?, &id)?, 0, u64::MAX, 1000, true)?;
     Ok(records)
@@ -645,7 +749,12 @@ mod tests {
             .join(format!(
                 "firescene-recording-{}-{}",
                 std::process::id(),
-                std::thread::current().name().unwrap_or("test")
+                std::thread::current()
+                    .name()
+                    .unwrap_or("test")
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                    .collect::<String>()
             ))
             .join(format!("{id}.jsonl"))
     }
@@ -754,6 +863,50 @@ mod tests {
         assert!(!dir.exists());
     }
     #[test]
+    #[ignore = "synthetic size and scan benchmark; not a performance guarantee"]
+    fn synthetic_long_recording_scan() {
+        let p = temporary("910-1");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let mut file = File::create(&p).unwrap();
+        let mut bytes = 0;
+        append(&mut file,&json!({"type":"header","version":1,"id":"910-1","name":"synthetic","started_ms":0,"source":"SIMULATION"}),&mut bytes).unwrap();
+        let sample = json!({"phase":"CONNECTED","telemetry":{"fields":{"battery":{"value":75,"status":"LIVE"},"gps_lat":{"value":37.5,"status":"LIVE"},"gps_lon":{"value":127.0,"status":"LIVE"},"relative_alt":{"value":30,"status":"LIVE"},"ground_speed":{"value":4,"status":"LIVE"},"roll":{"value":0,"status":"LIVE"},"pitch":{"value":0,"status":"LIVE"},"yaw":{"value":0,"status":"LIVE"}}}});
+        for i in 0..36_000u64 {
+            append(
+                &mut file,
+                &json!({"type":"sample","elapsed_ms":i*1000,"snapshot":sample}),
+                &mut bytes,
+            )
+            .unwrap();
+        }
+        append(
+            &mut file,
+            &json!({"type":"end","elapsed_ms":36_000_000u64,"ended_ms":36_000_000u64}),
+            &mut bytes,
+        )
+        .unwrap();
+        drop(file);
+        let started = Instant::now();
+        let (_, page) = scan(&p, 18_000_000, 18_599_999, 1600, false).unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(page.len(), 600);
+        println!(
+            "synthetic 10-hour file: {bytes} bytes; 10-minute range full scan: {} ms; {} samples",
+            elapsed.as_millis(),
+            page.len()
+        );
+        let started = Instant::now();
+        let fast = read_window_path(&p, "910-1", 18_000_000, 18_599_999, 1600).unwrap();
+        let fast_elapsed = started.elapsed();
+        assert_eq!(fast.records, page);
+        println!(
+            "synthetic 10-minute prefix scan: {} ms; {} samples",
+            fast_elapsed.as_millis(),
+            fast.records.len()
+        );
+        let _ = fs::remove_dir_all(p.parent().unwrap());
+    }
+    #[test]
     fn ordered_replay_and_interrupted_tail() {
         let p = temporary("123-7");
         fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -780,8 +933,42 @@ mod tests {
         assert_eq!(summary.warnings, 1);
         assert_eq!(records.len(), 2);
         assert_eq!(records[1]["snapshot"]["phase"], "CONNECTION_LOST");
+        let window = read_window_path(&p, "123-7", 1000, 2000, 20).unwrap();
+        assert_eq!(window.records, records);
+        assert!(!window.truncated);
+        let limited = read_window_path(&p, "123-7", 0, 2000, 1).unwrap();
+        assert_eq!(limited.records.len(), 1);
+        assert!(limited.truncated);
+        assert!(read_window_path(&p, "wrong", 0, 2000, 1).is_err());
         let (_, events) = scan(&p, 0, u64::MAX, 10, true).unwrap();
         assert_eq!(events.len(), 1);
+        let _ = fs::remove_dir_all(p.parent().unwrap());
+    }
+    #[test]
+    fn window_stops_after_requested_range_and_full_scan_still_detects_later_corruption() {
+        let p = temporary("987-2");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let mut f = File::create(&p).unwrap();
+        let mut bytes = 0;
+        append(&mut f,&json!({"type":"header","version":1,"id":"987-2","name":"test","started_ms":1,"source":"SIMULATION"}),&mut bytes).unwrap();
+        append(
+            &mut f,
+            &json!({"type":"sample","elapsed_ms":0,"snapshot":{}}),
+            &mut bytes,
+        )
+        .unwrap();
+        append(
+            &mut f,
+            &json!({"type":"sample","elapsed_ms":2000,"snapshot":{}}),
+            &mut bytes,
+        )
+        .unwrap();
+        f.write_all(b"not-json\n").unwrap();
+        drop(f);
+        let page = read_window_path(&p, "987-2", 0, 1000, 10).unwrap();
+        assert_eq!(page.records.len(), 1);
+        assert!(!page.truncated);
+        assert!(scan(&p, 0, 1000, 10, false).is_err());
         let _ = fs::remove_dir_all(p.parent().unwrap());
     }
     #[test]
