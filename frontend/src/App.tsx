@@ -7,8 +7,10 @@ import { RecordingBadge } from './RecordingStatus';
 import { SafetyBanner, SafetyPage } from './Safety';
 import { LiveStrip, OverviewTelemetry, OverviewFlightStrip, LiveEvents, LiveInspector, FlightInstruments } from './Telemetry';
 import { ConnectionSettings, phaseText, sourceText, useConnection } from './Connection';
-import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { missionAfterMapChange, type SelectedMission } from './workflow';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauri } from '@tauri-apps/api/core';
 const Spatial = lazy(() => import('./Spatial').then(m => ({default:m.Spatial})));
 const Camera = lazy(() => import('./Camera').then(m => ({default:m.Camera})));
 const MissionPage = lazy(() => import('./Missions').then(m => ({default:m.MissionPage})));
@@ -75,35 +77,51 @@ function App() {
   const [details, setDetails] = useState(true);
   const [navExpanded, setNavExpanded] = useState(true);
   const [context, setContext] = useState<'현장'|'기체'|'안전'|'조종'>('현장');
+  const [focus, setFocus] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [layoutError, setLayoutError] = useState('');
+  const [previewEpoch, setPreviewEpoch] = useState(0);
+  useEffect(()=>{
+    if (!isTauri()) return;
+    let disposed=false; let unlisten: (()=>void)|undefined;
+    const win=getCurrentWindow();
+    void win.onResized(()=>{setPreviewEpoch(n=>n+1);void win.isFullscreen().then(value=>{if(!disposed)setFullscreen(value);}).catch(()=>{});}).then(fn=>{if(disposed)fn();else unlisten=fn;}).catch(()=>{});
+    return ()=>{disposed=true;unlisten?.();};
+  },[]);
   const [theme, setThemeState] = useState<Theme>(()=>typeof window === 'undefined' ? 'dark' : initialTheme());
   const [firstRun,setFirstRun] = useState(()=>typeof window !== 'undefined' && needsFirstRun());
   function setTheme(next:Theme) {setThemeState(next);saveTheme(next);}
-  function navigate(next:number) { if (page===2 && next!==2 && missionDirty && !window.confirm('저장하지 않은 임무 변경사항이 있습니다. 이동하시겠습니까?')) return; setPage(next); }
+  function navigate(next:number) { if (page===2 && next!==2 && missionDirty && !window.confirm('저장하지 않은 임무 변경사항이 있습니다. 이동하시겠습니까?')) return; setFocus(false); setPage(next); }
+  function toggleFocus() { setPreviewEpoch(n=>n+1); setFocus(!focus); }
+  async function toggleFullscreen() { setPreviewEpoch(n=>n+1); try { const win=getCurrentWindow(); const next=!(await win.isFullscreen()); await win.setFullscreen(next); setFullscreen(next); setLayoutError(''); } catch { setLayoutError('전체 화면을 변경하지 못했습니다.'); } }
   return <div className={`app theme-${theme}`}><div className="product" inert={firstRun || undefined}>
     <header className="header">
       <div className="product-brand"><Mark/><div><b>FireScene <em>GCS</em></b><span>Ground Control Station · {version}</span></div></div>
       <div className="header-context"><span>현재 임무</span><b>{selectedMission?.name || '선택한 임무 없음'}</b></div>
       <div className="header-status"><Dot tone={connected ? 'good' : 'muted'}/><div><b>{status}</b><span>{connection.phase==='UNKNOWN' ? 'UNKNOWN · 상태 조회 실패' : connection.source==='OFFLINE' ? 'OFFLINE · 텔레메트리 미연결' : sourceText(connection)}</span></div></div>
+      {isTauri() && <button className="theme-toggle" onClick={()=>void toggleFullscreen()}>{fullscreen ? '전체 화면 종료' : '전체 화면'}</button>}
       <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'day' : 'dark')} aria-label={theme === 'dark' ? 'Day 테마로 변경' : 'Dark 테마로 변경'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17}/><span>{theme === 'dark' ? 'Day' : 'Dark'}</span></button>
     </header>
+    {layoutError && <div role="alert">{layoutError}</div>}
     <div className="status-strip" aria-label="주요 비행 상태"><div><span>연결</span><b>{status}</b></div><LiveStrip/><SafetyBanner onSelect={()=>navigate(6)}/><RecordingBadge/><div className="strip-lock"><Icon name="lock" size={14}/> 명령 잠김</div></div>
-    <div className={`body ${details ? '' : 'panel-closed'} ${page===0 ? 'overview-body' : ''} ${navExpanded ? 'nav-expanded' : 'nav-collapsed'}`}>
-      <nav className="nav-rail" aria-label="주 메뉴"><button className="nav-toggle" aria-label={navExpanded ? '메뉴 접기' : '메뉴 펼치기'} aria-expanded={navExpanded} onClick={()=>setNavExpanded(!navExpanded)}><Icon name="panel"/><span>{navExpanded ? '메뉴 접기' : '메뉴 펼치기'}</span></button>{navigation.map(([icon,label],i)=><button key={icon} title={label} aria-label={label} aria-current={page === i ? 'page' : undefined} className={page === i ? 'active' : ''} onClick={()=>navigate(i)}><Icon name={icon}/><span>{label}</span></button>)}<div className="nav-foot">FireScene<br/><span>운용 화면</span></div></nav>
+    <div className={`body ${details && !focus ? '' : 'panel-closed'} ${page===0 ? 'overview-body' : ''} ${navExpanded && !focus ? 'nav-expanded' : 'nav-collapsed'} ${focus ? 'focus-mode' : ''}`}>
+      <nav className="nav-rail" aria-label="주 메뉴"><button className="nav-toggle" aria-label={focus || !navExpanded ? '메뉴 펼치기' : '메뉴 접기'} aria-expanded={navExpanded && !focus} onClick={()=>{if(focus){setFocus(false);setNavExpanded(true);}else setNavExpanded(!navExpanded);}}><Icon name="panel"/><span>{navExpanded && !focus ? '메뉴 접기' : '메뉴 펼치기'}</span></button>{navigation.map(([icon,label],i)=><button key={icon} title={label} aria-label={label} aria-current={page === i ? 'page' : undefined} className={page === i ? 'active' : ''} onClick={()=>navigate(i)}><Icon name={icon}/><span>{label}</span></button>)}<div className="nav-foot">FireScene<br/><span>운용 화면</span></div></nav>
       <main className={`workspace ${page===0 ? 'overview-workspace' : ''}`}>
+        {(page===0 || page===4 || page===5) && <button className="focus-toggle" aria-pressed={focus} onClick={toggleFocus}>{focus ? '일반 보기' : `${page===0 ? '지도' : page===4 ? '3D 매핑' : '카메라'} 집중 보기`}</button>}
         {page === 0 ? <div className="overview-shell"><div className="overview-title"><div><span className="eyebrow">MISSION CONTROL / 공간 관제</span><h1>종합 관제</h1></div><span className="source-label">{connected ? '기체 데이터 수신 중' : '데이터 소스 없음'} · {sourceText(connection)}</span></div>
           <MapView source={connection.source} initialSelection={mapSelection} onSelection={selectMapLocation}/>
           <section className="overview-bottom" aria-label="핵심 비행 정보"><OverviewFlightStrip/><div className="overview-control"><span>조종 모드</span><button className="connection-button" onClick={()=>{setDetails(true);setContext('조종');}}>입력 미리보기</button><small>비행 명령 잠김</small></div></section>
         </div> : page === 1 ? <><div className="workspace-heading"><div><span className="eyebrow">기체 운용</span><h1>비행 제어</h1><p>자세 및 비행 상태</p></div><span className="source-label">{connected ? '기체 데이터 수신 중' : '데이터 소스 없음'}</span></div><FlightInstruments/></> : page === 2 ? <Suspense fallback={<PageLoading/>}><MissionPage source={connection.source} sharedSelection={mapSelection} selectedMission={selectedMission} onSelectedMission={setSelectedMission} onSharedSelection={setMapSelection} onDirtyChange={setMissionDirty}/></Suspense> : page === 4 ? <Suspense fallback={<PageLoading/>}><Spatial selection={mapSelection}/></Suspense> : page === 5 ? <Suspense fallback={<PageLoading/>}><Camera/></Suspense> : page === 6 ? <SafetyPage/> : page === 7 ? <Suspense fallback={<PageLoading/>}><Recordings selectedMissionId={selectedMission?.id ?? null}/></Suspense> : page === 8 ? <><ConnectionSettings control={control}/><Companion settings/><MapSettings/></> : page >= 3 && page <= 5 ? <><div className="workspace-heading"><div><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>{descriptions[page]}</p></div><span className="source-label">개발 예정</span></div><Companion page={navigation[page][1]}/></> : <div className="placeholder"><Icon name={navigation[page][0]} size={28}/><span className="eyebrow">작업 공간</span><h1>{navigation[page][1]}</h1><p>개발 예정</p><small>{descriptions[page]}</small></div>}
-        {page===1 && <ManualPreview key={page}/>}
+        {page===1 && <ManualPreview key={previewEpoch}/>}
       </main>
-      {details && (page===0 ? <aside className="inspector overview-context" aria-label="상황 패널"><div className="context-header"><div><span className="eyebrow">CONTEXT / 상황 인식</span><h2>상황 패널</h2></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div><div className="context-tabs" role="tablist" aria-label="상황 패널 항목">{(['현장','기체','안전','조종'] as const).map(item=><button key={item} role="tab" aria-selected={context===item} onClick={()=>setContext(item)}>{item}</button>)}</div>
+      {details && !focus && (page===0 ? <aside className="inspector overview-context" aria-label="상황 패널"><div className="context-header"><div><span className="eyebrow">CONTEXT / 상황 인식</span><h2>상황 패널</h2></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div><div className="context-tabs" role="tablist" aria-label="상황 패널 항목">{(['현장','기체','안전','조종'] as const).map(item=><button key={item} role="tab" aria-selected={context===item} onClick={()=>setContext(item)}>{item}</button>)}</div>
         {context==='현장' && <div className="context-content"><span className="context-kicker">INCIDENT / 현장</span><h3>{mapSelection?.name || '선택된 현장 없음'}</h3><p>{mapSelection?.address || '지도에서 건물을 선택하거나 임무 계획에서 저장된 임무를 선택하세요.'}</p>{mapSelection && <dl className="context-facts"><div><dt>조회 범위</dt><dd>{mapSelection.radius} m</dd></div><div><dt>건물 윤곽</dt><dd>{mapSelection.geometry ? '선택됨' : '미선택'}</dd></div></dl>}<div className="context-divider"/><span className="context-kicker">MISSION / 임무</span><h3>{selectedMission?.name || '선택한 임무가 없습니다'}</h3><p>{selectedMission ? `상태 ${selectedMission.status} · 진행 상태 미연동` : '저장된 임무를 선택해 현장과 연결하세요.'}</p><button className="connection-button" onClick={()=>navigate(2)}>임무 계획 열기</button><div className="context-divider"/><span className="context-kicker">최근 상태 메시지</span><LiveEvents/></div>}
         {context==='기체' && <div className="context-content"><span className="context-kicker">VEHICLE / 기체</span><h3>{status}</h3><p>{connected ? 'HEARTBEAT 수신 중 · 송신자 인증되지 않음' : '기체에서 수신된 데이터가 없습니다.'}</p><LiveInspector/><details className="context-graphs"><summary>상세 비행 정보 및 그래프</summary><OverviewTelemetry/></details></div>}
         {context==='안전' && <div className="context-content"><span className="context-kicker">SAFETY / 안전 감시</span><h3>안전 상태</h3><SafetyBanner onSelect={()=>navigate(6)}/><p>안전 감시는 보조 정보이며 PX4 failsafe와 별도입니다.</p><button className="connection-button" onClick={()=>navigate(6)}>안전 관리 열기</button><div className="command-lock"><Icon name="lock" size={16}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div></div>}
-        {context==='조종' && <div className="context-content control-context"><ManualPreview key="overview"/></div>}
+        {context==='조종' && <div className="context-content control-context"><ManualPreview key={previewEpoch}/></div>}
       </aside> : <aside className="inspector" aria-label="기체 정보"><div className="inspector-head"><div><span className="eyebrow">기체 정보</span><h2>기체 상태</h2><span>{connected ? 'PX4 HEARTBEAT 확인' : '연결된 기체 없음'}</span></div><button onClick={()=>setDetails(false)} aria-label="기체 정보 패널 닫기">×</button></div><div className="inspector-section"><div className="section-heading"><h3>연결 상태</h3><span className="state-badge"><Dot tone={connected ? 'good' : 'muted'}/>{status}</span></div><p>{connected ? 'HEARTBEAT 수신 중 · 송신자 인증되지 않음' : '기체에서 수신된 데이터가 없습니다.'}</p></div><div className="inspector-section"><div className="section-heading"><h3>비행 준비 상태</h3><span>확인 불가</span></div><LiveInspector/></div><div className="inspector-section"><div className="section-heading"><h3>안전 경고</h3></div><SafetyBanner onSelect={()=>navigate(6)}/></div><div className="command-lock"><Icon name="lock" size={16}/><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div><p className="development-note">읽기 전용 연결 · 비행 명령 비활성</p></aside>)}
 
-      {!details && <button className="reopen-panel" onClick={()=>setDetails(true)}><Icon name="panel" size={17}/><span>기체 정보</span></button>}
+      {!details && !focus && <button className="reopen-panel" onClick={()=>setDetails(true)}><Icon name="panel" size={17}/><span>기체 정보</span></button>}
     </div>
   </div>{firstRun && <FirstRun theme={theme} onTheme={setTheme} onClose={()=>setFirstRun(false)}/>}</div>;
 }

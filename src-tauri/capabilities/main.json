@@ -12,6 +12,6 @@
     "allow-connect-forwarded", "allow-list-serial-ports", "allow-connect-serial", "allow-auto-connect-serial", "allow-set-auto-device",
     "allow-connect-simulation", "allow-disconnect-serial", "allow-connection-status", "allow-connection-summary", "allow-acknowledge-alert",
     "allow-simulation-available", "allow-map3d-available", "allow-map3d-is-open", "allow-open-map3d",
-    "core:event:allow-listen", "core:event:allow-unlisten"
+    "core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-is-fullscreen", "core:window:allow-set-fullscreen"
   ]
 }

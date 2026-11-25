@@ -11,6 +11,7 @@ PARSER.add_argument('--results', default='/tmp/firescene-desktop-qa')
 PARSER.add_argument('--xdotool', help='optional X11 xdotool to focus the test window')
 PARSER.add_argument('--dev', action='store_true', help='start Vite and use debug simulation build')
 PARSER.add_argument('--with-map-key', action='store_true', help='copy existing key into isolated private config')
+PARSER.add_argument('--matrix', action='store_true', help='capture both themes at four requested window sizes')
 args=PARSER.parse_args()
 out=pathlib.Path(args.results).resolve(); out.mkdir(parents=True,exist_ok=True)
 with socket.socket() as probe:
@@ -100,6 +101,8 @@ try:
   screenshot('first-run-en-day'); click_text('Dark'); click_text('Skip setup')
   wait_for("return !document.querySelector('.first-run[role=dialog]')")
   assert js("return localStorage.getItem('firescene.setup.complete.v1')==='yes'")
+  command('POST','/refresh',{}); wait_for("return !!document.querySelector('nav[aria-label=\"주 메뉴\"]')",20)
+  assert js("return !document.querySelector('.first-run[role=dialog]') && !!document.querySelector('.theme-dark')")
  check('first run setup and skip',first_run)
  results.append({'name':'startup','status':'PASS','detail':f'{time.monotonic()-start:.2f}s to navigation'}); print('PASS startup',flush=True)
  screenshot('overview-initial')
@@ -109,6 +112,34 @@ try:
  def themes():
   click_text('Day'); wait_for("return !!document.querySelector('.theme-day')"); menu('종합 관제',0); screenshot('day'); click_text('Dark'); wait_for("return !!document.querySelector('.theme-dark')")
  check('theme switch',themes)
+ def focus_views():
+  for name,label in [('종합 관제','지도 집중 보기'),('3D 매핑','3D 매핑 집중 보기'),('카메라','카메라 집중 보기')]:
+   menu(name,0); click_text(label); wait_for("return !!document.querySelector('.body.focus-mode')")
+   assert js("return !!document.querySelector('.status-strip .safety-banner') && !!document.querySelector('.strip-lock')")
+   screenshot('focus-'+str(names.index(name)))
+   click_text('일반 보기'); wait_for("return !document.querySelector('.body.focus-mode')")
+  return 'focus and restore; safety and command lock remain visible'
+ check('focus views',focus_views)
+ def native_fullscreen():
+  menu('종합 관제',0); click_text('전체 화면'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면 종료')")
+  click_text('전체 화면 종료'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면')")
+ check('native fullscreen',native_fullscreen)
+ if args.matrix:
+  for width,height in [(910,512),(1366,768),(1440,900),(1920,1080),(2560,1440)]:
+   def matrix_size(width=width,height=height):
+    command('POST','/window/rect',{'width':width,'height':height})
+    rect=command('GET','/window/rect')
+    if rect['width'] != width or rect['height'] != height: raise RuntimeError(f'requested {width}x{height}, got {rect}')
+    for theme in ('dark','day'):
+     if theme=='day': click_text('Day')
+     for i,name in enumerate(names):
+      menu(name,i)
+      state=js("const s=document.querySelector('.status-strip'),l=document.querySelector('.strip-lock'),a=document.querySelector('.safety-banner');const within=e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight};return {lock:within(l),safety:within(a),strip:s.scrollWidth<=s.clientWidth+1,viewport:[innerWidth,innerHeight]}")
+      if not (state['lock'] and state['safety'] and state['strip']): raise AssertionError(f'{name} {theme} {state}')
+      if name!='시스템 설정': screenshot(f'matrix-{width}x{height}-{theme}-{i}')
+     if theme=='day': click_text('Dark')
+    return f'window {width}x{height}; both themes, nine menus; safety and lock in viewport'
+   check(f'matrix {width}x{height}',matrix_size)
  def nav_and_context():
   menu('종합 관제',0); click_text('메뉴 접기'); wait_for("return document.querySelector('.body')?.classList.contains('nav-collapsed')"); click_text('메뉴 펼치기'); wait_for("return document.querySelector('.body')?.classList.contains('nav-expanded')")
   click_text('기체'); wait_for("return document.body.innerText.includes('상세 비행 정보 및 그래프')"); click_text('안전'); wait_for("return document.body.innerText.includes('안전 감시는 보조 정보')"); click_text('현장'); wait_for("return document.body.innerText.includes('선택된 현장 없음')")
@@ -142,8 +173,12 @@ try:
   js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}))")
   wait_for("return document.body.innerText.includes('입력 시간 초과')",5)
   click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
+  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}))")
+  wait_for("return !!document.querySelector('.manual-keys .active')")
+  click_text('전체 화면'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
+  click_text('전체 화면 종료'); time.sleep(1); click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
   click_text('현장'); click_text('입력 미리보기'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
-  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout, panel switch reset'
+  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout, fullscreen and panel switch reset'
  check('offline practice basic',keyboard)
  def map_search():
   menu('종합 관제',0); wait_for("return !!document.querySelector('[aria-label=\"위치 검색\"]')")
