@@ -22,7 +22,7 @@ sudo usermod -aG dialout "$USER"
 
 ## Windows 설치
 
-Windows 11 x64용 NSIS 설치 파일은 아직 생성·검증되지 않았습니다. Windows 빌드 워크플로는 수동 실행용으로 준비되어 있으며 실제 CI 실행은 수행하지 않았습니다. Tauri 설치 설정은 Microsoft Edge WebView2 오프라인 설치 프로그램을 포함하도록 지정합니다. Windows 장치에는 해당 USB-직렬 장치의 공급업체 드라이버가 필요할 수 있습니다. 읽기 전용 COM 열기 구현과 포트 점유·재연결은 실제 Windows 및 해당 드라이버에서 검증해야 합니다. 드라이버가 읽기 전용 열기 또는 설정을 거부하면 연결은 실패하며 쓰기 가능한 핸들로 자동 전환하지 않습니다. [Tauri Windows 설치 문서](https://v2.tauri.app/distribute/windows-installer/)를 참고하세요.
+Windows 11 x64용 NSIS 설치 파일은 아직 생성·검증되지 않았습니다. Windows 빌드 워크플로는 수동 실행용으로 준비되어 있으며 실제 CI 실행은 수행하지 않았습니다. Tauri 설치 설정은 기존 Microsoft Edge WebView2를 재사용하고 없으면 인터넷에서 설치하는 방식을 사용합니다. 오프라인 설치는 별도 설정으로 선택할 수 있습니다. Windows 장치에는 해당 USB-직렬 장치의 공급업체 드라이버가 필요할 수 있습니다. 읽기 전용 COM 열기 구현과 포트 점유·재연결은 실제 Windows 및 해당 드라이버에서 검증해야 합니다. 드라이버가 읽기 전용 열기 또는 설정을 거부하면 연결은 실패하며 쓰기 가능한 핸들로 자동 전환하지 않습니다. [Tauri Windows 설치 문서](https://v2.tauri.app/distribute/windows-installer/)를 참고하세요.
 
 최종 사용자는 앱을 실행하기 위해 Python, Node.js, npm, Rust, Cargo, ROS2, Gazebo, PX4 SITL 또는 QGroundControl을 별도 설치할 필요가 없습니다. 운영체제 런타임, 지도 인터넷 연결 및 장치 드라이버는 필요할 수 있습니다.
 

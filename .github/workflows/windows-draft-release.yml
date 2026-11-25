@@ -61,5 +61,5 @@ jobs:
           gh release create "$RELEASE_TAG"
           windows-artifact/FireScene-GCS_0.1.0_x64-setup.exe
           windows-artifact/SHA256SUMS.txt
-          --verify-tag --draft --title "FireScene GCS 0.1.0 Windows test"
-          --notes "Unsigned test installer. Windows installation and KOA FC compatibility require separate verification."
+          --verify-tag --draft --prerelease --title "FireScene GCS 0.1.0 Windows test"
+          --notes "Unsigned Windows test build for read-only KOA FC telemetry validation. Flight commands are locked. Windows installation and KOA FC compatibility are not yet verified."
