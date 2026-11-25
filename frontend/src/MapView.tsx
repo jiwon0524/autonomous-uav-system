@@ -11,7 +11,7 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Point from 'ol/geom/Point';
 import GeoJSON from 'ol/format/GeoJSON';
-import { circular } from 'ol/geom/Polygon';
+import { incidentArea } from './mapGeometry';
 import { getCenter } from 'ol/extent';
 import LineString from 'ol/geom/LineString';
 import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style';
@@ -87,8 +87,8 @@ export function MapView({ source }: { source: string }) {
   }, [follow, live, lat?.value, lon?.value, lat?.timestamp_ms, lat?.system_id, lat?.component_id, source]);
   useEffect(() => {
     areaFeatures.current.clear();
-    if (!building || radius <= 0 || radius > 2000) return;
-    const polygon = circular(building.center, radius, 96).transform('EPSG:4326','EPSG:3857');
+    if (!building) return;
+    const polygon = incidentArea(building.center, radius); if (!polygon) return;
     const feature = new Feature(polygon); feature.setStyle(new Style({stroke:new Stroke({color:'#e3b977',width:2,lineDash:[6,5]}),fill:new Fill({color:'rgba(227,185,119,0.12)'})})); areaFeatures.current.addFeature(feature);
   }, [building,radius]);
   async function search() {

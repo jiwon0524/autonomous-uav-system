@@ -29,3 +29,30 @@ TypeScript 검사와 프론트엔드 빌드, Rust 기존 테스트 19개, Ubuntu
 ## 남은 작업
 
 Tauri GUI의 실제 데이터 수신과 인증·오류·기체 텔레메트리 회귀를 우선 검증한다. VWorld 3D API의 도메인·라이선스와 격리된 전용 웹뷰의 Tauri 권한 차단 및 자원 해제를 검증한 후 3D 전환과 건물 중심 카메라 조작을 구현해야 한다. 추정 위치·방향·고도와 마지막 위치의 명확한 시각화, 안전 감시 독립성, 실측 성능과 Windows 검증이 남았다. Stage 8 임무 계획은 이 단계의 공간정보 검증 후 별도 범위로 진행한다.
+
+## 2026-11-25: 3D SDK 조사 및 SSH 환경 재검증
+
+상태: **3D 구현 미완료**. 이 절은 앞의 진행 보고에 추가된 최신 결과다. 2D 지도 및 기존 기체·안전 기능을 다시 구현하지 않았다.
+
+[VWorld 공식 WebGL3 예제](https://github.com/V-world/V-world_API_sample/blob/master/%5BWebGL3%5D%20%ED%81%B4%EB%A6%AD%EB%90%9C%20%EB%AA%A8%EB%8D%B8%20%EC%88%A8%EA%B8%B0%EA%B8%B0.html)는 WebGL 3D API 3.0의 `vw.Map`, `vw.CameraPosition`, `vw.CoordZ`, `vw.Direction`으로 지도를 초기화하고 `ws3d.viewer` 및 Cesium 피처 선택을 사용한다. 기존 키로 초기화 스크립트 요청에 정상 응답과 유효 표시가 반환됐다. 이는 스크립트 요청의 결과일 뿐 3D 타일·지형 표시, 등록 도메인 일치 또는 Tauri 내부 실행의 증거는 아니다. 현재 엔진을 실제 앱에 설치하거나 로드하지 않았다.
+
+실제 받은 초기화 스크립트는 `domain`이 비어 있을 때 문서의 `location.protocol`이 HTTPS가 아니면 후속 JavaScript와 타일 주소를 HTTP로 선택한다. Linux Tauri의 기본 `tauri://localhost` 출처에서 이 분기를 타는 것은 코드상 확인했지만 실제 WebKitGTK 요청은 GUI에서 미검증이다. HTTP 코드를 관제 웹뷰에 허용하거나 등록되지 않은 인증 도메인을 임의로 지정하지 않았다. 제공자에게 Tauri 커스텀 스킴·도메인 등록과 HTTPS 3D SDK 지원을 확인해야 한다. Windows의 별도 WebView 출처도 검증이 필요하다.
+
+[Tauri capability 문서](https://v2.tauri.app/security/capabilities/)는 외부 콘텐츠에 대한 명시적 권한 부여와 Linux iframe 구분 한계를 설명한다. 현재 별도 3D WebView, 그에 대한 capability 및 IPC 경계는 **구현·검증하지 않았다**. 특히 Tauri는 별도 앱 명령 권한 선언을 하지 않은 사용자 정의 명령에 기본 접근을 허용할 수 있으므로, 추후 `AppManifest::commands`와 main WebView 전용 capability를 적용하고 실제 거부 테스트를 마친 뒤 원격 코드를 실행해야 한다. 전체 CSP를 해제하거나 3D SDK를 메인 관제 WebView에 삽입하지 않았다. 실제 건물·지형, 방향별 시점, 2D/3D 전환, 선택 정보와 위치 공유는 모두 PENDING이다.
+
+실제 API 재점검용 `python3 scripts/check_vworld.py`를 추가했다. 로컬 설정에서 키를 읽으며 키·요청 URL·예외 원문을 출력하지 않는다. 네트워크 접근이 허용된 환경에서 기본 PNG, 위성 JPEG, 장소 검색 3건, 건물 윤곽 5건 및 3D 초기화 응답을 확인했다. Tauri의 CSP, CORS, 도메인 인증이나 렌더링 성공을 대신 증명하지 않는다. VWorld 검색 응답에 CORS 허용 헤더가 없는 것은 이전 직접 요청에서 관찰했으며 앱의 검색·건물 요청은 Rust 경유다.
+
+반경 함수에 유한 좌표 및 1~2000m 검증을 추가했다. 프론트엔드 자동 테스트에서 서울·부산 좌표의 50m, 100m, 2000m 원 전체 꼭짓점 거리를 확인하고 잘못된 입력을 거부했다. 기존 오프라인 UI 회귀 테스트가 OpenLayers CSS를 처리하도록 수정했다. `npm --prefix frontend test`, TypeScript 검사와 프론트엔드 빌드, Rust 테스트 19개를 통과했다. 실제 대상 장비의 메모리·CPU·GPU·기동 성능은 측정하지 않았다.
+
+검은 화면은 이전 원격 그래픽 세션의 화면 캡처에서 관찰했을 뿐 원인을 특정할 증거가 없다. 캡처 경로·원격 세션, WebKitGTK·WebGL·GPU, 컨테이너 크기, CSP·CORS, VWorld 도메인 인증 및 실제 렌더링 각각 **PENDING**이며, 캡처 실패를 지도 실행 실패로 판정하지 않는다. 이번 SSH 작업에서는 시스템이나 원격 데스크톱 설정을 바꾸거나 GUI를 조작하지 않았다.
+
+Ubuntu의 일반 그래픽 세션에서 사용자가 직접 확인할 실행 방법:
+
+```sh
+cd /home/jiwon/autonomous-uav-system
+./src-tauri/target/release/firescene-gcs
+```
+
+시스템 설정의 키가 읽히는지 확인하고, 종합 관제에서 기본/위성 전환, 주소 검색, 건물 윤곽 선택과 50m·100m 범위, 창 크기 변경 및 인터넷 중단 시 안전 상태를 확인한다. 실제 기체 또는 개발용 시뮬레이션에서 GPS 마커·경로와 오래된 데이터 제거를 확인한다. 시뮬레이션은 개발 빌드에서만 확인한다. 3D 버튼과 지도는 아직 구현되지 않았으므로 검사할 수 없다. API 독립 진단은 같은 디렉터리에서 `python3 scripts/check_vworld.py`로 실행한다.
+
+이번 리빌드 `cargo tauri build --bundles deb -- --offline` 성공, Ubuntu DEB 5.18 MiB로 이전 5.18 MiB와 표시 정밀도에서 동일하다. 프론트엔드 번들은 약 608 kB로 Vite의 500 kB 경고가 남는다. GUI와 3D 엔진 부하를 측정하지 않았으므로 성능 개선으로 판단하지 않는다.

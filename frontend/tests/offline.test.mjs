@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 test('initial UI shows disconnected state and all navigation destinations', async () => {
   const dir = await mkdtemp('node_modules/.firescene-test-');
   try {
-    const result = await build({ entryPoints: ['src/App.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'] });
+    const result = await build({ entryPoints: ['src/App.tsx'], bundle: true, write: false, platform: 'node', format: 'esm', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'empty' } });
     const path = `${dir}/app.mjs`;
     await writeFile(path, result.outputFiles[0].text);
     const { default: App } = await import(pathToFileURL(`${process.cwd()}/${path}`));
