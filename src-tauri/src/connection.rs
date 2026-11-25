@@ -94,6 +94,19 @@ impl Default for Manager {
     }
 }
 impl Manager {
+    pub(crate) fn recording_handle(&self) -> Arc<Mutex<Snapshot>> {
+        self.snapshot.clone()
+    }
+    pub(crate) fn recording_snapshot(
+        handle: &Arc<Mutex<Snapshot>>,
+    ) -> Result<serde_json::Value, String> {
+        let mut s = handle.lock().map_err(|_| "통신 상태 읽기 실패")?;
+        assess(&mut s);
+        let mut value = serde_json::to_value(&*s).map_err(|_| "통신 상태 변환 실패")?;
+        value["telemetry"] =
+            serde_json::to_value(s.store.safety_view()).map_err(|_| "텔레메트리 변환 실패")?;
+        Ok(value)
+    }
     fn stop(&self) {
         if let Some(worker) = self.worker.lock().unwrap().take() {
             worker.cancel.store(true, Ordering::SeqCst);
@@ -258,7 +271,7 @@ impl Manager {
         *worker = Some(Worker { cancel, handle });
         Ok(())
     }
-    fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot {
         let mut snapshot = self.snapshot.lock().unwrap();
         assess(&mut snapshot);
         let mut result = snapshot.clone();
@@ -787,6 +800,21 @@ mod tests {
         }
         let snapshot = manager.snapshot();
         assert!((snapshot.telemetry.fields["roll"].value.unwrap() - 28.6479).abs() < 0.01);
+        let recorded = Manager::recording_snapshot(&manager.recording_handle()).unwrap();
+        println!(
+            "synthetic UDP recording snapshot: {} bytes",
+            serde_json::to_vec(&recorded).unwrap().len()
+        );
+        assert_eq!(recorded["source"], "SIMULATION");
+        assert_eq!(recorded["vehicle"]["system_id"], 42);
+        assert!(
+            (recorded["telemetry"]["fields"]["roll"]["value"]
+                .as_f64()
+                .unwrap()
+                - 28.6479)
+                .abs()
+                < 0.01
+        );
         packet.clear();
         let low = mavlink::dialects::common::MavMessage::SYS_STATUS(
             mavlink::dialects::common::SYS_STATUS_DATA {

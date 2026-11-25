@@ -3,14 +3,25 @@ mod connection;
 mod map;
 mod map3d;
 mod missions;
+mod recording;
 mod safety;
 mod telemetry;
 fn main() {
     let builder = tauri::Builder::default()
         .manage(connection::Manager::default())
-        .manage(missions::MissionStore::default());
+        .manage(missions::MissionStore::default())
+        .manage(std::sync::Arc::new(recording::Recorder::default()));
     #[cfg(feature = "simulation")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording::start_recording,
+        recording::stop_recording,
+        recording::recording_status,
+        recording::list_recordings,
+        recording::read_recording,
+        recording::recording_events,
+        recording::rename_recording,
+        recording::delete_recording,
+        recording::export_recording,
         missions::load_missions,
         missions::save_missions,
         map3d::map3d_available,
@@ -32,6 +43,15 @@ fn main() {
     ]);
     #[cfg(not(feature = "simulation"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording::start_recording,
+        recording::stop_recording,
+        recording::recording_status,
+        recording::list_recordings,
+        recording::read_recording,
+        recording::recording_events,
+        recording::rename_recording,
+        recording::delete_recording,
+        recording::export_recording,
         missions::load_missions,
         missions::save_missions,
         map3d::map3d_available,

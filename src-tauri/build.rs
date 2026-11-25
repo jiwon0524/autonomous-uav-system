@@ -1,6 +1,15 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "start_recording",
+            "stop_recording",
+            "recording_status",
+            "list_recordings",
+            "read_recording",
+            "recording_events",
+            "rename_recording",
+            "delete_recording",
+            "export_recording",
             "load_missions",
             "save_missions",
             "search_places",
