@@ -8,11 +8,13 @@ PARSER.add_argument('--driver', required=True, help='tauri-driver executable')
 PARSER.add_argument('--native-driver', required=True, help='WebKitWebDriver executable')
 PARSER.add_argument('--app', default=str(ROOT/'src-tauri/target/debug/firescene-gcs'))
 PARSER.add_argument('--results', default='/tmp/firescene-desktop-qa')
+PARSER.add_argument('--xdotool', help='optional X11 xdotool to focus the test window')
 PARSER.add_argument('--dev', action='store_true', help='start Vite and use debug simulation build')
 PARSER.add_argument('--with-map-key', action='store_true', help='copy existing key into isolated private config')
 args=PARSER.parse_args()
 out=pathlib.Path(args.results).resolve(); out.mkdir(parents=True,exist_ok=True)
 with socket.socket() as probe:
+ probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
  probe.bind(('127.0.0.1',4444))  # refuse to attach to an unrelated existing driver
 # Refuse any persistent or user-owned data directory as a test profile.
 profile=pathlib.Path(tempfile.mkdtemp(prefix='firescene-qa-',dir='/tmp'))
@@ -39,9 +41,17 @@ def check(name,fn):
  except Exception as e:
   results.append({'name':name,'status':'FAIL','detail':type(e).__name__+': '+str(e)[:250]}); print('FAIL',name,str(e)[:250],flush=True)
   if name == 'simulation recording and replay': screenshot('recording-failure')
+  if name == 'offline practice basic':
+   try:
+    results[-1]['diagnostic']=js("return {focus:document.hasFocus(),visibility:document.visibilityState,reason:document.querySelector('.manual-preview [role=status]')?.innerText||''}")
+   except Exception: pass
 def click_text(label):
  ok=js("const e=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===arguments[0]); if(!e||e.disabled)return false; e.click();return true;",label)
  if not ok: raise AssertionError('button unavailable: '+label)
+def click_user(label):
+ found=command('POST','/element',{'using':'xpath','value':"//button[normalize-space(.)="+json.dumps(label,ensure_ascii=False)+"]"})
+ command('POST','/element/'+found['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
+
 def wait_for(script,seconds=10):
  end=time.monotonic()+seconds
  while time.monotonic()<end:
@@ -51,7 +61,7 @@ def wait_for(script,seconds=10):
 def screenshot(name):
  # App-only WebDriver captures; system settings is excluded because it contains a key field.
  (out/(name+'.png')).write_bytes(base64.b64decode(command('GET','/screenshot')))
-def measure_main():
+def find_main_pid():
  def descend(pid):
   try: children=[int(x) for x in pathlib.Path(f'/proc/{pid}/task/{pid}/children').read_text().split()]
   except (FileNotFoundError,PermissionError): return []
@@ -59,6 +69,9 @@ def measure_main():
  pids=descend(proc.pid)
  app=next((p for p in pids if pathlib.Path(f'/proc/{p}/comm').read_text().strip()=='firescene-gcs'),None)
  if not app: raise RuntimeError('app process not found under test driver')
+ return app
+def measure_main():
+ app=find_main_pid()
  def read():
   stat=pathlib.Path(f'/proc/{app}/stat').read_text().split(); status=pathlib.Path(f'/proc/{app}/status').read_text().splitlines()
   rss=next(x.split()[1] for x in status if x.startswith('VmRSS:'))
@@ -90,15 +103,27 @@ try:
   command('POST','/window/maximize',{}); command('POST','/window/rect',{'width':1200,'height':800})
  check('window resize maximize restore',resize)
  def keyboard():
-  menu('종합 관제',0); click_text('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
-  # DOM events exercise app event handlers, not physical keyboard or WM focus behavior.
-  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW',bubbles:true}));")
-  wait_for("return document.querySelector('.manual-keys .active')?.innerText.includes('W')")
-  js("window.dispatchEvent(new KeyboardEvent('keyup',{key:'w',code:'KeyW',bubbles:true}));")
+  menu('종합 관제',0)
+  if args.xdotool:
+   wins=subprocess.check_output([args.xdotool,'search','--onlyvisible','--pid',str(find_main_pid())],env=env,text=True).splitlines()
+   if len(wins)!=1: raise RuntimeError('expected exactly one test window')
+   subprocess.run([args.xdotool,'windowfocus','--sync',wins[0]],env=env,check=True,timeout=5)
+  click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
+  for key,code in [('w','KeyW'),('s','KeyS'),('a','KeyA'),('d','KeyD'),('ArrowUp','ArrowUp'),('ArrowDown','ArrowDown'),('ArrowLeft','ArrowLeft'),('ArrowRight','ArrowRight')]:
+   js("window.dispatchEvent(new KeyboardEvent('keydown',{key:arguments[0],code:arguments[1],bubbles:true}));",key,code)
+   wait_for("return document.querySelectorAll('.manual-keys .active').length===1")
+   js("window.dispatchEvent(new KeyboardEvent('keyup',{key:arguments[0],code:arguments[1],bubbles:true}));",key,code)
+   wait_for("return !document.querySelector('.manual-keys .active')")
+  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}));window.dispatchEvent(new KeyboardEvent('keydown',{key:'s',code:'KeyS'}));")
+  wait_for("return document.body.innerText.includes('전후 0')")
+  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space'}));")
   wait_for("return !document.querySelector('.manual-keys .active')")
-  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));")
+  js("window.dispatchEvent(new KeyboardEvent('keyup',{key:'w',code:'KeyW'}));window.dispatchEvent(new KeyboardEvent('keyup',{key:'s',code:'KeyS'}));window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape'}));")
   wait_for("return !document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
-  return 'synthetic DOM key events: W down/up, Escape; physical focus not tested'
+  click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
+  js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}))")
+  wait_for("return document.body.innerText.includes('입력 시간 초과')",5)
+  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout'
  check('offline practice basic',keyboard)
  def map_search():
   menu('종합 관제',0); wait_for("return !!document.querySelector('[aria-label=\"위치 검색\"]')")
