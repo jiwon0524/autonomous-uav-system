@@ -56,3 +56,38 @@ cd /home/jiwon/autonomous-uav-system
 시스템 설정의 키가 읽히는지 확인하고, 종합 관제에서 기본/위성 전환, 주소 검색, 건물 윤곽 선택과 50m·100m 범위, 창 크기 변경 및 인터넷 중단 시 안전 상태를 확인한다. 실제 기체 또는 개발용 시뮬레이션에서 GPS 마커·경로와 오래된 데이터 제거를 확인한다. 시뮬레이션은 개발 빌드에서만 확인한다. 3D 버튼과 지도는 아직 구현되지 않았으므로 검사할 수 없다. API 독립 진단은 같은 디렉터리에서 `python3 scripts/check_vworld.py`로 실행한다.
 
 이번 리빌드 `cargo tauri build --bundles deb -- --offline` 성공, Ubuntu DEB 5.18 MiB로 이전 5.18 MiB와 표시 정밀도에서 동일하다. 프론트엔드 번들은 약 608 kB로 Vite의 500 kB 경고가 남는다. GUI와 3D 엔진 부하를 측정하지 않았으므로 성능 개선으로 판단하지 않는다.
+
+## Stage 7.3: 별도 HTTPS 3D 페이지와 실험용 창
+
+이 절이 앞선 3D 구현 상태를 대체한다. **3D는 실험 코드가 추가됐으나 실제 작동과 권한 격리 검증 전이며 기본 빌드에서 비활성이다.** 대상 건물·지형 렌더링을 성공했다고 판단하지 않는다.
+
+### 구현 및 HTTPS
+
+`frontend/public/vworld-3d.html`은 관제 UI와 별도 문서다. 공식 예제의 WebGL 3D API 3.0 초기화 스크립트를 그대로 HTTPS로 읽고 `vw.Map`, `vw.CameraPosition`, `vw.CoordZ`, `vw.Direction`으로 지도 시작을 요청한다. 공식 SDK의 `document.write` 방식에 맞춰 페이지 구문 분석 중 스크립트를 삽입한다. 지형·건물은 SDK가 제공하는 데이터에 맡기며 임의의 모델을 생성하지 않는다. 북·남·동·서·상단 및 초기화 버튼은 Cesium 카메라 호출을 준비하고, 마우스 회전과 확대·축소는 SDK에 맡긴다. SDK와 리소스 오류를 표시하되 시작 요청만으로 데이터 로딩 성공을 표시하지 않는다. 3D 미지원 지역 자동 판별은 미구현이다.
+
+페이지는 실제 HTTPS 출처가 아니면 SDK를 호출하지 않는다. `domain` 값을 임의로 지정하거나 SDK 소스를 변경하지 않는다. 사용자가 VWorld에 등록하고 제공자가 허용한 HTTPS 도메인에서 이 페이지를 호스팅해야 한다. 공식 예제는 HTTPS 문서에서 SDK를 불러오는 방식을 보여주나, 이 키의 등록 도메인·별도 호스팅과 API 이용 조건은 확인되지 않았다. 페이지를 배포하지 않았고 실제 SDK 초기화, 제공자 도메인 인증, 3D 타일 및 지형은 PENDING이다. Tauri Linux의 `useHttpsScheme`에 의존하지 않는다.
+
+실험용 `experimental-vworld-3d` Cargo feature와 빌드 시 `FIRESCENE_3D_PAGE_URL`을 모두 지정하면 별도 `map3d` WebView 창이 준비된다. URL은 쿼리·인증 정보 없는 HTTPS 주소여야 하며 같은 주소 이외로 탐색을 허용하지 않는다. 2D 선택 건물 중심 또는 지도 중심과 조회 반경을 URL fragment로 전달하므로 HTTP 요청 경로에 포함하지 않는다. 반경은 3D 페이지에서 수치로만 표시하고 윤곽·범위 원, 드론 위치·경로는 아직 3D에 표시하지 않는다. 방위 버튼은 건물의 실제 정면을 의미하지 않는다. 창을 열 때 2D 인스턴스를 해제하고 종료 이벤트 후 복원하도록 구현했으나 GUI 동작은 PENDING이다.
+
+실험 창은 기존 로컬 키를 Rust에서 읽어 **명시적으로 설정한 HTTPS 페이지**의 세션 저장소로 전달한다. 따라서 해당 페이지와 그 페이지에서 실행하는 SDK는 키를 읽을 수 있다. 키는 HTML 파일·Git·페이지 URL에 들어가지 않지만 호스팅 서버의 콘텐츠를 신뢰해야 하고 클라이언트 키는 비밀로 보장할 수 없다. HTTPS 페이지가 등록 도메인이 아니거나 키가 없는 경우 기능을 사용할 수 없다.
+
+### 권한 경계
+
+모든 앱 명령을 `AppManifest::commands`에 등록하고 `main` WebView에만 열거형 capability를 부여했다. `map3d` 및 원격 출처에는 capability를 부여하지 않았다. 3D 페이지는 별도 창이며 원격 콘텐츠를 관제 WebView에 삽입하지 않는다. 와일드카드 capability는 없다. Rust 정적 구성 테스트는 핸들러 명령의 매니페스트 등록, main 전용 권한과 원격 권한 부재를 확인한다. **실제 Linux/Windows WebView에서 3D 콘텐츠가 IPC와 기체 통신을 호출하지 못하는지 확인한 것은 아니다.** 메인 창의 기존 명령과 안전 감시도 capability 변경 후 실제 GUI 회귀가 필요하다. 이 검증 전에는 일반 릴리스에서 3D를 켜지 않는다.
+
+### 검증 및 남은 일
+
+프론트엔드 자동 테스트는 별도 페이지에서 비 HTTPS 출처의 SDK 호출을 거부하고, 모의 SDK에 선택 좌표와 상단 시점을 전달하며 SDK 부재를 성공으로 보고하지 않는지 검사한다. 모의 테스트는 실제 VWorld 또는 WebGL 검증이 아니다. Rust 기본 빌드 및 실험 feature 검사를 수행했고, 권한 설정의 정적 검사와 기존 Rust 테스트를 수행했다. 실제 3D 창의 SDK·지형·건물, CORS/CSP, 권한 거부, 이벤트 수신·복원, 네트워크 장애 시 안전 감시 독립성, GPU·RAM 및 Windows는 PENDING이다. 3D 라이브러리나 공간정보 데이터는 앱에 추가로 번들하지 않았다.
+
+A. 별도 WebView는 위 실험 구조로 준비했으나 격리 시험이 남았다. B. VWorld가 승인한 HTTPS 페이지가 필요하며 아직 호스팅하지 않았다. C. 다른 엔진의 VWorld 실제 3D 데이터 접근 권한과 형식은 확인되지 않아 사용하지 않는다. D. 같은 승인된 HTTPS 페이지를 일반 브라우저에서 시험하는 것은 임시 진단이며 관제 통합 검증이 아니다. Electron 전환은 하지 않았다.
+
+일반 Ubuntu 그래픽 세션의 기본 빌드 실행:
+
+```sh
+cd /home/jiwon/autonomous-uav-system
+./src-tauri/target/release/firescene-gcs
+```
+
+사용자는 먼저 2D 및 안전 감시의 기존 기능을 확인한다. 실험 3D는 기본적으로 비활성이다. 별도 보안 검증 환경에서 제공자 승인 도메인에 `frontend/public/vworld-3d.html`을 호스팅하고 API 등록·이용 조건을 확인한 경우에만 해당 HTTPS 페이지 URL로 `FIRESCENE_3D_PAGE_URL`을 설정하여 `cargo tauri dev --features experimental-vworld-3d`를 실행할 수 있다. 이 실험은 호스트에 로컬 키를 제공하므로 신뢰할 수 있는 페이지에서만 수행한다. 이 창에서 Tauri 연결·설정 명령 거부, 키·도메인 인증, 실제 3D 건물·지형, 시점 조작 및 닫기 후 2D 복원을 각각 확인해야 한다.
+
+최종 검증: 프론트엔드 테스트 3개 파일 통과, 기본 Rust 단위 테스트 20개와 권한 구성 테스트 1개 통과, 실험 feature의 Rust 테스트 통과, 시뮬레이션 feature 컴파일 통과, TypeScript 및 프론트엔드 빌드와 Tauri Ubuntu DEB 빌드 통과. DEB는 5,430,784 bytes(5.18 MiB)로 이전과 표시 정밀도에서 같다. DEB 목록에서 Gazebo·PX4 SITL·테스트 생성기를 찾지 못했다. 프로덕션 Rust에는 시뮬레이션 핸들러가 feature 조건으로 제외되지만, capability 매니페스트에는 개발 빌드를 위한 권한 이름이 남아 있다. 변경 파일과 릴리스 산출물에서 로컬 키 문자열은 발견되지 않았다. Vite의 500 kB 청크 경고는 남아 있다.

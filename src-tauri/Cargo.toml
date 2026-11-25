@@ -7,6 +7,8 @@ edition = "2021"
 [features]
 default = []
 simulation = []
+# Requires a separately hosted, provider-approved HTTPS page; not enabled in release builds.
+experimental-vworld-3d = []
 
 [[example]]
 name = "telemetry_feed"

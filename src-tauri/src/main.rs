@@ -1,12 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod connection;
 mod map;
+mod map3d;
 mod safety;
 mod telemetry;
 fn main() {
     let builder = tauri::Builder::default().manage(connection::Manager::default());
     #[cfg(feature = "simulation")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        map3d::map3d_available,
+        map3d::map3d_is_open,
+        map3d::open_map3d,
         map::search_places,
         map::buildings_at,
         map::load_map_key,
@@ -23,6 +27,9 @@ fn main() {
     ]);
     #[cfg(not(feature = "simulation"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        map3d::map3d_available,
+        map3d::map3d_is_open,
+        map3d::open_map3d,
         map::search_places,
         map::buildings_at,
         map::load_map_key,
