@@ -1,0 +1,27 @@
+import { useEffect, useRef, useState } from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { Companion } from './Companion';
+import { pixelBox } from './cameraGeometry';
+
+type Detection = {object_id:string;class_name:string;confidence:number;bbox:[number,number,number,number];tracking_id:string|null;depth_m:number|null};
+type Header = {frame_id:number;timestamp_ms:number;width:number;height:number;detections:Detection[]};
+type Status = {phase:string;error:string|null;received_ms:number|null;width:number|null;height:number|null;fps:number};
+type Frame = {url:string;header:Header;received:number};
+const offline:Status={phase:'OFFLINE',error:null,received_ms:null,width:null,height:null,fps:0};
+export function Camera() {
+ const [ip,setIp]=useState(''),[port,setPort]=useState(''),[status,setStatus]=useState(offline),[frame,setFrame]=useState<Frame|null>(null),[show,setShow]=useState(true),[zoom,setZoom]=useState(false),[error,setError]=useState(''),[displayFps,setDisplayFps]=useState(0),[clock,setClock]=useState(Date.now());
+ const url=useRef<string|null>(null); const shown=useRef(0); const epoch=useRef(performance.now());
+ useEffect(()=>{if(!isTauri())return;let active=true,pending=false;
+  const tick=async()=>{if(pending)return;pending=true;try{const s=await invoke<Status>('camera_status');if(!active)return;setStatus(s);setClock(Date.now());if(s.phase!=='LIVE'){setFrame(null);return;}const data=await invoke<ArrayBuffer>('camera_take_frame');if(!active || data.byteLength<5)return;const bytes=new Uint8Array(data);const n=new DataView(data).getUint32(0);if(n===0||n>16384||4+n>=bytes.length)throw Error('영상 프레임 오류');const h=JSON.parse(new TextDecoder().decode(bytes.subarray(4,4+n))) as Header;const received=s.received_ms ?? 0;if(Date.now()-received>3000)return;const next=URL.createObjectURL(new Blob([bytes.subarray(4+n)],{type:'image/jpeg'}));if(url.current)URL.revokeObjectURL(url.current);url.current=next;setFrame({url:next,header:h,received});}catch(e){if(active){setError(String(e));setFrame(null);}}finally{pending=false;}};
+  void tick();const timer=window.setInterval(tick,100);return()=>{active=false;window.clearInterval(timer);void invoke('camera_disconnect').catch(()=>{});if(url.current)URL.revokeObjectURL(url.current);};
+ },[]);
+ async function connect(){const n=Number(port);if(!ip.trim()||!Number.isInteger(n)||n<1||n>65535){setError('숫자 IP와 유효한 포트를 입력하세요');return;}try{setFrame(null);await invoke('camera_connect',{ip:ip.trim(),port:n});setError('');}catch(e){setError(String(e));}}
+ async function disconnect(){try{await invoke('camera_disconnect');setFrame(null);setStatus(offline);}catch(e){setError(String(e));}}
+ const visible=status.phase==='LIVE' && frame && clock-frame.received<3000 ? frame : null;
+ function loaded(){shown.current++;const now=performance.now();if(now-epoch.current>=1000){setDisplayFps(shown.current*1000/(now-epoch.current));shown.current=0;epoch.current=now;}}
+ return <><div className="workspace-heading"><div><span className="eyebrow">PERCEPTION</span><h1>카메라</h1><p>RGB 영상 및 탐지 참고 정보</p></div><span className="source-label">{status.phase}</span></div>
+ <Companion page="카메라"/><section className="telemetry-section companion-panel"><div className="section-heading"><h2>영상 연결</h2><span>{status.phase}</span></div><div className="companion-form"><label>IP 주소<input value={ip} onChange={e=>setIp(e.target.value)} placeholder="192.168.1.10"/></label><label>포트<input value={port} onChange={e=>setPort(e.target.value)} inputMode="numeric" placeholder="8766"/></label><button onClick={()=>void connect()} disabled={!isTauri()}>연결</button><button onClick={()=>void disconnect()} disabled={!isTauri()}>연결 해제</button></div><p>격리 시험망 전용 · 출처 미인증 · 촬영 지연 UNKNOWN</p><p>해상도 {status.width&&status.height?`${status.width} × ${status.height}`:'미수신'} · 수신 {status.phase==='LIVE'?status.fps.toFixed(1):'0'} FPS · 표시 {visible?displayFps.toFixed(1):'0'} FPS · 마지막 수신 {status.received_ms?new Date(status.received_ms).toLocaleTimeString():'없음'}</p>{(error||status.error)&&<p role="alert">{error||status.error}</p>}</section>
+ <section className="telemetry-section"><div className="section-heading"><h2>RGB 영상</h2><div className="companion-form"><label><input type="checkbox" checked={show} onChange={e=>setShow(e.target.checked)}/> 탐지 표시</label><button onClick={()=>setZoom(!zoom)}>{zoom?'축소':'확대'}</button></div></div><p>AI 탐지는 참고 정보이며 인원 존재를 확정하지 않습니다. 탐지 수: {visible?visible.header.detections.length:0}</p>
+ <div className={`camera-scroll ${zoom?'zoom':''}`}><div className="camera-view" style={visible?{aspectRatio:`${visible.header.width} / ${visible.header.height}`} : undefined}>{visible?<><img src={visible.url} onLoad={loaded} onError={()=>{setError('JPEG 디코딩 실패');setFrame(null);}} alt="수신된 RGB 영상"/><svg viewBox={`0 0 ${visible.header.width} ${visible.header.height}`} preserveAspectRatio="none" aria-label="객체 탐지 표시">{show&&visible.header.detections.map(d=>{const b=pixelBox(d.bbox,visible.header.width,visible.header.height);return <g key={d.object_id}><rect x={b.x} y={b.y} width={b.width} height={b.height}/><text x={b.x} y={Math.max(14,b.y-4)}>{d.class_name} {(d.confidence*100).toFixed(0)}%{d.tracking_id?` #${d.tracking_id}`:''}{d.depth_m!=null?` ${d.depth_m} m`:''}</text></g>})}</svg></>:<div className="camera-offline">OFFLINE · 수신 영상 없음</div>}</div></div></section>
+ <section className="telemetry-section"><h2>Depth</h2><p>원본 거리 데이터 및 컬러맵 영상 수신은 개발 예정입니다. 거리 측정 미검증.</p></section></>;
+}

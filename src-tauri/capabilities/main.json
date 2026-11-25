@@ -5,6 +5,7 @@
   "permissions": [
     "allow-start-recording", "allow-stop-recording", "allow-recording-status", "allow-list-recordings", "allow-read-recording", "allow-read-recording-window", "allow-recording-events", "allow-rename-recording", "allow-delete-recording", "allow-export-recording",
     "allow-load-missions", "allow-save-missions", "allow-search-places", "allow-buildings-at", "allow-load-map-key", "allow-save-map-key",
+    "allow-camera-connect", "allow-camera-disconnect", "allow-camera-status", "allow-camera-take-frame",
     "allow-companion-connect", "allow-companion-disconnect", "allow-companion-status",
     "allow-list-serial-ports", "allow-connect-serial", "allow-auto-connect-serial", "allow-set-auto-device",
     "allow-connect-simulation", "allow-disconnect-serial", "allow-connection-status", "allow-connection-summary", "allow-acknowledge-alert",

@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod camera;
 mod companion;
 mod connection;
 mod map;
@@ -11,6 +12,7 @@ fn main() {
     let builder = tauri::Builder::default()
         .manage(connection::Manager::default())
         .manage(companion::Manager::default())
+        .manage(camera::Manager::default())
         .manage(missions::MissionStore::default())
         .manage(std::sync::Arc::new(recording::Recorder::default()));
     #[cfg(feature = "simulation")]
@@ -34,6 +36,10 @@ fn main() {
         map::buildings_at,
         map::load_map_key,
         map::save_map_key,
+        camera::camera_connect,
+        camera::camera_disconnect,
+        camera::camera_status,
+        camera::camera_take_frame,
         companion::companion_connect,
         companion::companion_disconnect,
         companion::companion_status,
@@ -69,6 +75,10 @@ fn main() {
         map::buildings_at,
         map::load_map_key,
         map::save_map_key,
+        camera::camera_connect,
+        camera::camera_disconnect,
+        camera::camera_status,
+        camera::camera_take_frame,
         companion::companion_connect,
         companion::companion_disconnect,
         companion::companion_status,
