@@ -12,6 +12,7 @@ import VectorSource from 'ol/source/Vector';
 import Point from 'ol/geom/Point';
 import GeoJSON from 'ol/format/GeoJSON';
 import { incidentArea } from './mapGeometry';
+import { alternateQuery, createSearchGate, mergeResults, normalizeQuery, rank, searchError, type SearchItem, type SearchKind, type SearchResponse } from './locationSearch';
 import { getCenter } from 'ol/extent';
 import LineString from 'ol/geom/LineString';
 import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style';
@@ -32,15 +33,13 @@ export function MapSettings() {
   async function save() { const parts = center.split(',').map(x => Number(x.trim())); if (parts.length !== 2 || !parts.every(Number.isFinite) || Math.abs(parts[0]) > 180 || Math.abs(parts[1]) > 85) { setMessage('중심 좌표는 경도, 위도 순서로 입력하세요.'); return; } try { if (isTauri()) { await invoke('save_map_key', {key:key.trim()}); localStorage.removeItem(keyName); } else localStorage.setItem(keyName, key.trim()); localStorage.setItem(centerName, JSON.stringify(parts)); setMessage('로컬 설정에 저장했습니다. 인증 성공 여부는 확인되지 않았습니다.'); } catch { setMessage('지도 설정 저장에 실패했습니다.'); } }
   return <section className="connection-panel"><div className="section-heading"><h2>지도 설정</h2></div><label>VWorld API 키<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)}/></label><label>초기 중심 (경도, 위도)<input value={center} onChange={e=>setCenter(e.target.value)}/></label><button className="connection-button" onClick={()=>void save()}>지도 설정 저장</button><p>{message || '키는 이 기기의 로컬 설정에 저장되며 완전한 비밀 저장소가 아닙니다.'}</p><p>VWorld에서 API 키를 발급받고 사용 도메인 및 데스크톱 앱 허용 여부를 확인하세요. 인터넷 연결이 필요합니다.</p></section>;
 }
-type SearchItem = { title: string; address?: {road?: string; parcel?: string}; point: { x: string; y: string } };
 export type MapSelection = {name:string; address:string; id:string; center:number[]; geometry:object|null; radius:number};
-type SearchResponse = { status?: string; error?: {code?: string}; result?: {items?: SearchItem[]} };
 export const MapView = memo(function MapView({ source, initialSelection, onSelection, radiusOverride }: { source: string; initialSelection?: MapSelection | null; onSelection?: (selection:MapSelection|null)=>void; radiusOverride?: number }) {
   const target = useRef<HTMLDivElement>(null); const mapRef = useRef<Map | null>(null); const savedView = useRef<{center:number[];zoom:number}|undefined>(undefined);
   const buildingFeatures = useRef(new VectorSource()); const areaFeatures = useRef(new VectorSource()); const buildingRequest = useRef(0); const lastBuildingRequest = useRef(0);
   const [building,setBuilding] = useState<Omit<MapSelection,'radius'>|null>(()=>initialSelection ? {name:initialSelection.name,address:initialSelection.address,id:initialSelection.id,center:initialSelection.center,geometry:initialSelection.geometry} : null); const [buildingStatus,setBuildingStatus] = useState(initialSelection ? '저장된 현장 위치' : '지도에서 건물을 선택하세요'); const [radius,setRadius] = useState(initialSelection?.radius ?? 50);
-  const features = useRef(new VectorSource()); const searchFeatures = useRef(new VectorSource()); const requestId = useRef(0); const lastRequest = useRef(0);
-  const [query,setQuery] = useState(''); const [kind,setKind] = useState('road'); const [results,setResults] = useState<SearchItem[]>([]); const [searchStatus,setSearchStatus] = useState(''); const track = useRef<number[][]>([]); const trackIdentity = useRef(''); const lastTimestamp = useRef(0); const lastLive = useRef(false);
+  const features = useRef(new VectorSource()); const searchFeatures = useRef(new VectorSource()); const searchGate = useRef(createSearchGate()); const lastRequest = useRef(0);
+  const [query,setQuery] = useState(''); const [searching,setSearching] = useState(false); const [results,setResults] = useState<SearchItem[]>([]); const [searchStatus,setSearchStatus] = useState(''); const track = useRef<number[][]>([]); const trackIdentity = useRef(''); const lastTimestamp = useRef(0); const lastLive = useRef(false);
   const [layer, setLayer] = useState<'Base'|'Satellite'>('Base'); const [status, setStatus] = useState('지도 준비'); const [coords, setCoords] = useState(initialCenter); const [follow, setFollow] = useState(false);
   const [key,setKey] = useState(''); const fields = useGpsTelemetry();
   const [map3dEnabled,setMap3dEnabled] = useState(false); const [map3dOpen,setMap3dOpen] = useState(false); const [map3dStatus,setMap3dStatus] = useState('3D 실험 기능 비활성');
@@ -108,27 +107,38 @@ export const MapView = memo(function MapView({ source, initialSelection, onSelec
     try { await invoke('open_map3d', {lon:center[0],lat:center[1],radius:building && radius >= 1 && radius <= 2000 ? radius : null}); }
     catch { setMap3dOpen(false); setMap3dStatus('3D 창을 열지 못했습니다 · HTTPS 설정 확인'); }
   }
+  useEffect(()=>()=>{searchGate.current.cancel();}, []);
+  function cancelSearch() { searchGate.current.cancel(); setSearching(false); setResults([]); setSearchStatus(''); }
   async function search() {
-    const id = ++requestId.current; setResults([]); searchFeatures.current.clear();
+    if (searching) return;
+    const normalized=normalizeQuery(query);
     if (!key) { setSearchStatus('지도 API 키가 필요합니다'); return; }
     if (!isTauri()) { setSearchStatus('검색은 Tauri 앱에서 사용할 수 있습니다'); return; }
-    if (query.trim().length < 2 || query.trim().length > 100) { setSearchStatus('검색어는 2~100자로 입력하세요'); return; }
-    if (Date.now() - lastRequest.current < 1000) { setSearchStatus('잠시 후 다시 검색하세요'); return; }
-    lastRequest.current = Date.now(); setSearchStatus('검색 중');
-    try {
-      const response = await invoke<SearchResponse>('search_places', {key, query:query.trim(), kind});
-      if (requestId.current !== id) return;
-      if (response.status === 'NOT_FOUND') { setSearchStatus('검색 결과가 없습니다'); return; }
-      if (response.status !== 'OK') { setSearchStatus((response.error?.code === 'INVALID_KEY' || response.error?.code?.startsWith('AUTH')) ? '인증 실패 · 키와 도메인 확인' : '검색 서버 오류'); return; }
-      const items = (response.result?.items || []).filter(item => Number.isFinite(Number(item.point?.x)) && Number.isFinite(Number(item.point?.y)) && Math.abs(Number(item.point.x)) <= 180 && Math.abs(Number(item.point.y)) <= 85);
-      setResults(items); setSearchStatus(items.length ? `${items.length}개 결과` : '검색 결과가 없습니다');
-    } catch { if (requestId.current === id) setSearchStatus('네트워크 또는 검색 서버 오류'); }
+    if (normalized.length < 2 || normalized.length > 100) { setSearchStatus('검색어는 2~100자로 입력하세요'); return; }
+    if (Date.now()-lastRequest.current<1000) { setSearchStatus('잠시 후 다시 검색하세요'); return; }
+    const id=searchGate.current.start(); lastRequest.current=Date.now(); setResults([]); setSearching(true); setSearchStatus('검색 중');
+    const run=async (q:string, kinds:SearchKind[], candidate=false) => Promise.all(kinds.map(async kind=>{
+      try { const response=await invoke<SearchResponse>('search_places',{key,query:q,kind});
+        if(response.status==='NOT_FOUND') return {items:[] as SearchItem[],error:''};
+        if(response.status!=='OK') return {items:[] as SearchItem[],error:searchError(response.error?.code)};
+        return {items:(response.result?.items||[]).map(item=>({...item,kind,candidate})),error:''};
+      } catch(e) { const msg=String(e); return {items:[] as SearchItem[],error:/429/.test(msg)?searchError('429'):/40[13]/.test(msg)?searchError('403'):'네트워크 또는 검색 서버 오류'}; }
+    }));
+    const primary=await run(normalized,['road','parcel','place']); if(!searchGate.current.isCurrent(id)) return;
+    let all=primary.flatMap(r=>r.items); const errors=primary.map(r=>r.error).filter(Boolean);
+    const alternate=alternateQuery(normalized);
+    if(alternate && alternate!==normalized && !all.some(i=>rank(i,normalized)<=1) && errors.length===0) {
+      const more=await run(alternate,['place'],true); if(!searchGate.current.isCurrent(id)) return;
+      all=all.concat(more.flatMap(r=>r.items)); errors.push(...more.map(r=>r.error).filter(Boolean));
+    }
+    const merged=mergeResults(all,normalized); setResults(merged); setSearching(false);
+    setSearchStatus(errors.length ? `${merged.length ? `${merged.length}개 결과 · 일부 검색 실패` : '검색 실패'} · ${errors[0]}` : merged.length ? `${merged.length}개 결과` : '검색 결과가 없습니다');
   }
   function selectResult(item: SearchItem) {
     const position = fromLonLat([Number(item.point.x),Number(item.point.y)]); searchFeatures.current.clear();
     const marker = new Feature(new Point(position)); marker.setStyle(new Style({image:new CircleStyle({radius:7,fill:new Fill({color:'#73bbec'}),stroke:new Stroke({color:'#171b19',width:2})})})); searchFeatures.current.addFeature(marker);
-    buildingFeatures.current.clear(); setBuilding({name:item.title || '',address:item.address?.road || item.address?.parcel || '',id:'',center:[Number(item.point.x),Number(item.point.y)],geometry:null}); setBuildingStatus('검색 결과 위치 · 건물 윤곽 미선택');
+    setSearchStatus('검색 위치로 이동 · 건물 선택은 지도에서 별도로 하세요');
     setFollow(false); mapRef.current?.getView().animate({center:position,zoom:17,duration:250});
   }
-  return <section className="map-area map-real" aria-label="지도 작업 공간"><div className="map-toolbar"><b>관제 지도</b><button disabled={!map3dEnabled || map3dOpen} onClick={()=>void open3d()} title={map3dStatus}>3D 실험</button><button disabled={map3dOpen} onClick={()=>setLayer('Base')} aria-pressed={layer==='Base'}>기본</button><button disabled={map3dOpen} onClick={()=>setLayer('Satellite')} aria-pressed={layer==='Satellite'}>위성</button><button disabled={map3dOpen} onClick={()=>{mapRef.current?.getView().setCenter(fromLonLat(initialCenter())); mapRef.current?.getView().setZoom(15); setFollow(false);}}>초기화</button><button disabled={!live || map3dOpen} onClick={()=>{if(live) mapRef.current?.getView().setCenter(fromLonLat([lon.value!,lat.value!]));}}>GPS 원시 위치</button><label><input type="checkbox" disabled={map3dOpen} checked={follow} onChange={e=>setFollow(e.target.checked)}/> GPS 추적</label></div><div className="map-search"><select value={kind} onChange={e=>{requestId.current++; setResults([]); setSearchStatus(''); setKind(e.target.value);}} aria-label="검색 종류"><option value="road">도로명</option><option value="parcel">지번</option><option value="place">장소</option></select><input value={query} onChange={e=>{requestId.current++; setResults([]); setSearchStatus(''); setQuery(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter') void search();}} placeholder="주소 또는 장소 검색" aria-label="주소 또는 장소 검색"/><button onClick={()=>void search()}>검색</button><span role="status">{searchStatus}</span>{results.length > 0 && <div className="map-results">{results.map((item,i)=><button key={i} onClick={()=>{selectResult(item); setResults([]);}}>{item.title} · {item.address?.road || item.address?.parcel || '주소 없음'}</button>)}</div>}</div><div className="map-canvas" ref={target}>{!key && <div className="map-empty"><strong>VWorld API 키가 설정되지 않았습니다</strong><span>시스템 설정에서 키를 입력하세요. 인터넷 연결이 필요합니다.</span></div>}</div><div className="map-info"><span>{buildingStatus}{building ? ` · ${building.name} · ${building.address} · ${building.id}` : ''}</span>{building && <><button onClick={()=>setRadius(50)}>50 m</button><button onClick={()=>setRadius(100)}>100 m</button><label>반경 m <input type="number" min="1" max="2000" value={radius} onChange={e=>setRadius(Number(e.target.value))}/></label><button onClick={()=>mapRef.current?.getView().setCenter(fromLonLat(building.center))}>건물 중심</button><button onClick={()=>{setBuilding(null); buildingFeatures.current.clear(); areaFeatures.current.clear();}}>현장 초기화</button><span>조회 범위 · 비행 안전거리 아님</span></>}<span>{map3dStatus}</span><span>{key ? status : '지도 미연결'}</span><span>중심 {coords[1].toFixed(5)}, {coords[0].toFixed(5)}</span><span>{live ? `GPS 원시 위치 · 경로 최대 500점 · ${source === 'SIMULATION' ? '시뮬레이션' : source === 'QGC_FORWARD' ? 'QGC 전달 (선택)' : source === 'ROUTER_FORWARD' ? 'Router 전달 (선택)' : '직접 직렬'} · ${new Date(lat.timestamp_ms).toLocaleTimeString()} · 출처 미검증` : 'GPS 원시 위치 미수신 또는 오래됨'}</span><span>지도 출처: VWorld</span></div></section>;
+  return <section className="map-area map-real" aria-label="지도 작업 공간"><div className="map-toolbar"><b>관제 지도</b><button disabled={!map3dEnabled || map3dOpen} onClick={()=>void open3d()} title={map3dStatus}>3D 실험</button><button disabled={map3dOpen} onClick={()=>setLayer('Base')} aria-pressed={layer==='Base'}>기본</button><button disabled={map3dOpen} onClick={()=>setLayer('Satellite')} aria-pressed={layer==='Satellite'}>위성</button><button disabled={map3dOpen} onClick={()=>{mapRef.current?.getView().setCenter(fromLonLat(initialCenter())); mapRef.current?.getView().setZoom(15); setFollow(false);}}>초기화</button><button disabled={!live || map3dOpen} onClick={()=>{if(live) mapRef.current?.getView().setCenter(fromLonLat([lon.value!,lat.value!]));}}>GPS 원시 위치</button><label><input type="checkbox" disabled={map3dOpen} checked={follow} onChange={e=>setFollow(e.target.checked)}/> GPS 추적</label></div><div className="map-search"><input value={query} onChange={e=>{cancelSearch(); setQuery(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter') void search(); if(e.key==='Escape') cancelSearch();}} placeholder="주소, 건물명, 장소명을 입력하세요." aria-label="위치 검색"/><button disabled={searching} onClick={()=>void search()}>검색</button><button onClick={()=>{cancelSearch();setQuery('');searchFeatures.current.clear();}} aria-label="검색어 삭제">지우기</button>{searching && <button onClick={cancelSearch}>검색 취소</button>}<span role="status">{searchStatus}</span>{results.length > 0 && <div className="map-results">{results.map((item,i)=><button key={i} onClick={()=>{selectResult(item); setResults([]);}}><b>{item.title || item.address?.bldnm || '이름 미제공'}</b> · {item.kind==='place'?'장소':item.kind==='road'?'도로명 주소':'지번 주소'}{item.candidate?' · 대체 검색 후보':rank(item,normalizeQuery(query))>=3?' · 유사 검색 후보':''}{item.address?.road && <span> · 도로명: {item.address.road}</span>}{item.address?.parcel && <span> · 지번: {item.address.parcel}</span>}</button>)}</div>}</div><div className="map-canvas" ref={target}>{!key && <div className="map-empty"><strong>VWorld API 키가 설정되지 않았습니다</strong><span>시스템 설정에서 키를 입력하세요. 인터넷 연결이 필요합니다.</span></div>}</div><div className="map-info"><span>{buildingStatus}{building ? ` · ${building.name} · ${building.address} · ${building.id}` : ''}</span>{building && <><button onClick={()=>setRadius(50)}>50 m</button><button onClick={()=>setRadius(100)}>100 m</button><label>반경 m <input type="number" min="1" max="2000" value={radius} onChange={e=>setRadius(Number(e.target.value))}/></label><button onClick={()=>mapRef.current?.getView().setCenter(fromLonLat(building.center))}>건물 중심</button><button onClick={()=>{setBuilding(null); buildingFeatures.current.clear(); areaFeatures.current.clear();}}>현장 초기화</button><span>조회 범위 · 비행 안전거리 아님</span></>}<span>{map3dStatus}</span><span>{key ? status : '지도 미연결'}</span><span>중심 {coords[1].toFixed(5)}, {coords[0].toFixed(5)}</span><span>{live ? `GPS 원시 위치 · 경로 최대 500점 · ${source === 'SIMULATION' ? '시뮬레이션' : source === 'QGC_FORWARD' ? 'QGC 전달 (선택)' : source === 'ROUTER_FORWARD' ? 'Router 전달 (선택)' : '직접 직렬'} · ${new Date(lat.timestamp_ms).toLocaleTimeString()} · 출처 미검증` : 'GPS 원시 위치 미수신 또는 오래됨'}</span><span>지도 출처: VWorld</span></div></section>;
 });

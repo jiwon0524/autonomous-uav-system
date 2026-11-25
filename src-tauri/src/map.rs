@@ -18,6 +18,11 @@ pub async fn search_places(key: String, query: String, kind: String) -> Result<V
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "지도 네트워크 초기화 실패")?;
+    let (search_type, category) = match kind.as_str() {
+        "road" => ("ADDRESS", "ROAD"),
+        "parcel" => ("ADDRESS", "PARCEL"),
+        _ => ("PLACE", ""),
+    };
     let mut response = client
         .get("https://api.vworld.kr/req/search")
         .query(&[
@@ -28,7 +33,8 @@ pub async fn search_places(key: String, query: String, kind: String) -> Result<V
             ("size", "10"),
             ("page", "1"),
             ("query", query),
-            ("type", &kind),
+            ("type", search_type),
+            ("category", category),
             ("format", "json"),
             ("errorformat", "json"),
             ("key", &key),
@@ -37,7 +43,7 @@ pub async fn search_places(key: String, query: String, kind: String) -> Result<V
         .await
         .map_err(|_| "네트워크 오류 또는 시간 초과")?;
     if !response.status().is_success() {
-        return Err("지도 서버 HTTP 오류".into());
+        return Err(format!("지도 서버 HTTP {}", response.status().as_u16()));
     }
     if response.content_length().is_some_and(|n| n > 1_000_000) {
         return Err("지도 서버 응답 크기 초과".into());
