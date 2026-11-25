@@ -1,11 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod connection;
+mod map;
 mod safety;
 mod telemetry;
 fn main() {
     let builder = tauri::Builder::default().manage(connection::Manager::default());
     #[cfg(feature = "simulation")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        map::search_places,
+        map::buildings_at,
+        map::load_map_key,
+        map::save_map_key,
         connection::list_serial_ports,
         connection::connect_serial,
         connection::auto_connect_serial,
@@ -18,6 +23,10 @@ fn main() {
     ]);
     #[cfg(not(feature = "simulation"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        map::search_places,
+        map::buildings_at,
+        map::load_map_key,
+        map::save_map_key,
         connection::list_serial_ports,
         connection::connect_serial,
         connection::auto_connect_serial,

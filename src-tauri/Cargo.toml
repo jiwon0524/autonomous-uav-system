@@ -21,3 +21,6 @@ serialport = "4.10.1"
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 libc = "0.2"
+
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "query"] }
+serde_json = "1"
