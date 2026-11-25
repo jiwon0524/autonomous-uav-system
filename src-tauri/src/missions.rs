@@ -191,6 +191,19 @@ fn write(path: &Path, mut db: Database, expected: u64) -> Result<Database, Strin
         }
         file
     };
+    #[cfg(windows)]
+    let _lock = {
+        use std::os::windows::fs::OpenOptionsExt;
+        // A zero sharing mode excludes other cooperating FireScene processes and
+        // the handle releases the lock automatically on exit or crash.
+        fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .share_mode(0)
+            .open(dir.join(".missions.lock"))
+            .map_err(|_| "다른 프로그램에서 임무를 저장 중이거나 잠금 파일에 접근할 수 없습니다. 다시 시도하세요")?
+    };
     let old = read(path)?;
     if old.revision != expected {
         return Err("임무 목록이 변경되었습니다. 다시 불러오세요".into());
@@ -399,6 +412,25 @@ mod tests {
         assert!(write(&p, Database::default(), 0).is_err());
         assert!(!p.exists());
         drop(f);
+        assert!(write(&p, Database::default(), 0).is_ok());
+        let _ = fs::remove_dir_all(p.parent().unwrap());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn concurrent_writer_is_rejected_on_windows() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let p = path();
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .share_mode(0)
+            .open(p.parent().unwrap().join(".missions.lock"))
+            .unwrap();
+        assert!(write(&p, Database::default(), 0).is_err());
+        assert!(!p.exists());
+        drop(lock);
         assert!(write(&p, Database::default(), 0).is_ok());
         let _ = fs::remove_dir_all(p.parent().unwrap());
     }

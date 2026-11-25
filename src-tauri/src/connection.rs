@@ -578,8 +578,10 @@ fn run_with_timeouts(
             s.phase = Phase::Error;
             s.error = Some(match e.kind() {
                 io::ErrorKind::NotFound => format!("장치 미연결 또는 직렬 포트 없음: {e}"),
+                io::ErrorKind::PermissionDenied if cfg!(windows) => format!("직렬 포트 접근 거부: 다른 프로그램의 포트 사용 또는 장치 권한을 확인하세요. {e}"),
                 io::ErrorKind::PermissionDenied => format!("장치 접근 권한 부족: {e}"),
-                _ if e.raw_os_error() == Some(libc::EBUSY) => {
+                _ if cfg!(windows) && e.raw_os_error() == Some(32) => format!("다른 프로그램에서 직렬 포트 사용 중: {e}"),
+                _ if cfg!(unix) && e.raw_os_error() == Some(libc::EBUSY) => {
                     format!("다른 프로그램에서 직렬 포트 사용 중: {e}")
                 }
                 _ => format!("직렬 포트 열기 실패: {e}"),

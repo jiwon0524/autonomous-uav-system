@@ -1,0 +1,55 @@
+name: Windows NSIS test artifact
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Type check and frontend tests
+        working-directory: frontend
+        run: |
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Rust tests (default features)
+        working-directory: src-tauri
+        run: cargo test --locked --target x86_64-pc-windows-msvc
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version 2.12.6 --locked
+      - name: Build Windows NSIS (default features)
+        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+      - name: Prepare installer and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe')
+          if ($files.Count -ne 1) { throw "Expected one NSIS installer, found $($files.Count)" }
+          New-Item -ItemType Directory -Path windows-artifact | Out-Null
+          $installer = 'windows-artifact/FireScene-GCS_0.1.0_x64-setup.exe'
+          Copy-Item -LiteralPath $files[0].FullName -Destination $installer
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD 'windows-artifact/SHA256SUMS.txt'), "$hash  FireScene-GCS_0.1.0_x64-setup.exe`n", [Text.Encoding]::ASCII)
+          [IO.File]::WriteAllText((Join-Path $PWD 'windows-artifact/BUILD_COMMIT.txt'), "$env:GITHUB_SHA`n", [Text.Encoding]::ASCII)
+          Write-Host "Installer bytes: $((Get-Item $installer).Length)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firescene-windows-x64-nsis-test
+          path: windows-artifact/
+          if-no-files-found: error
+          retention-days: 14

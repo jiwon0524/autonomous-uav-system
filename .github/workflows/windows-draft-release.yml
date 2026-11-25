@@ -1,0 +1,65 @@
+name: Windows draft release from tested artifact
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Windows NSIS test artifact run ID
+        required: true
+        type: string
+      release_tag:
+        description: Existing tag pointing to the same commit as the build
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify selected workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > /tmp/firescene-run.json
+          jq -e '(.path | split("@")[0]) == ".github/workflows/windows-build.yml" and .conclusion == "success"' /tmp/firescene-run.json > /dev/null
+      - uses: actions/download-artifact@v4
+        with:
+          name: firescene-windows-x64-nsis-test
+          path: windows-artifact
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify checksum and source commit
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          tag_commit=$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")
+          build_commit=$(tr -d '\r\n' < windows-artifact/BUILD_COMMIT.txt)
+          run_commit=$(jq -r '.head_sha' /tmp/firescene-run.json)
+          test "$tag_commit" = "$build_commit"
+          test "$run_commit" = "$build_commit"
+          (cd windows-artifact && sha256sum --check SHA256SUMS.txt)
+      - name: Create draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          windows-artifact/FireScene-GCS_0.1.0_x64-setup.exe
+          windows-artifact/SHA256SUMS.txt
+          --verify-tag --draft --title "FireScene GCS 0.1.0 Windows test"
+          --notes "Unsigned test installer. Windows installation and KOA FC compatibility require separate verification."
