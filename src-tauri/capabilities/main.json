@@ -3,7 +3,7 @@
   "description": "FireScene control webview only; no remote origins",
   "webviews": ["main"],
   "permissions": [
-    "allow-search-places", "allow-buildings-at", "allow-load-map-key", "allow-save-map-key",
+    "allow-load-missions", "allow-save-missions", "allow-search-places", "allow-buildings-at", "allow-load-map-key", "allow-save-map-key",
     "allow-list-serial-ports", "allow-connect-serial", "allow-auto-connect-serial", "allow-set-auto-device",
     "allow-connect-simulation", "allow-disconnect-serial", "allow-connection-status", "allow-acknowledge-alert",
     "allow-simulation-available", "allow-map3d-available", "allow-map3d-is-open", "allow-open-map3d",

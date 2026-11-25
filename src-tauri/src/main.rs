@@ -2,12 +2,17 @@
 mod connection;
 mod map;
 mod map3d;
+mod missions;
 mod safety;
 mod telemetry;
 fn main() {
-    let builder = tauri::Builder::default().manage(connection::Manager::default());
+    let builder = tauri::Builder::default()
+        .manage(connection::Manager::default())
+        .manage(missions::MissionStore::default());
     #[cfg(feature = "simulation")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        missions::load_missions,
+        missions::save_missions,
         map3d::map3d_available,
         map3d::map3d_is_open,
         map3d::open_map3d,
@@ -27,6 +32,8 @@ fn main() {
     ]);
     #[cfg(not(feature = "simulation"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        missions::load_missions,
+        missions::save_missions,
         map3d::map3d_available,
         map3d::map3d_is_open,
         map3d::open_map3d,

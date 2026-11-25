@@ -1,6 +1,8 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "load_missions",
+            "save_missions",
             "search_places",
             "buildings_at",
             "load_map_key",
