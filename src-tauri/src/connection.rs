@@ -248,8 +248,13 @@ impl Manager {
         if let Some(old) = worker.take() {
             let _ = old.handle.join();
         }
-        let socket = std::net::UdpSocket::bind(address)
-            .map_err(|e| format!("UDP 수신 포트 열기 실패 (주소 또는 점유 상태 확인): {e}"))?;
+        let socket = std::net::UdpSocket::bind(address).map_err(|e| {
+            if e.kind() == io::ErrorKind::AddrInUse {
+                format!("UDP 포트 점유 중: {e}")
+            } else {
+                format!("UDP 수신 포트 열기 실패: {e}")
+            }
+        })?;
         socket
             .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| e.to_string())?;
@@ -571,7 +576,14 @@ fn run_with_timeouts(
         Err(e) => {
             let mut s = shared.lock().unwrap();
             s.phase = Phase::Error;
-            s.error = Some(format!("포트 열기 실패 (권한 또는 점유 상태 확인): {e}"));
+            s.error = Some(match e.kind() {
+                io::ErrorKind::NotFound => format!("장치 미연결 또는 직렬 포트 없음: {e}"),
+                io::ErrorKind::PermissionDenied => format!("장치 접근 권한 부족: {e}"),
+                _ if e.raw_os_error() == Some(libc::EBUSY) => {
+                    format!("다른 프로그램에서 직렬 포트 사용 중: {e}")
+                }
+                _ => format!("직렬 포트 열기 실패: {e}"),
+            });
             return;
         }
     };

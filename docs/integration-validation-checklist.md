@@ -36,3 +36,12 @@ cd /home/jiwon/autonomous-uav-system
 배포된 DEB를 설치한 경우 메뉴에서 앱을 실행한다. 시리얼 장치 접근은 `ls -l /dev/ttyACM0`와 `groups`로 실제 장치 및 그룹을 먼저 확인한다. `dialout`이 장치 소유 그룹인 경우의 권한 설정은 [README](../README.md)에 있으며, 적용은 관리자가 판단하고 재로그인한다. Windows에는 USB-직렬 장치 공급업체 드라이버가 필요할 수 있고 WebView2 설치는 패키지 설정에 따른다. API 키는 시스템 설정에서 사용자 키로 교체한다.
 
 Companion·카메라·점군 및 QGC 로컬 전달은 인증되지 않는다. 개발 시험은 신뢰할 수 있는 격리망에서만 수행하고 선택한 경로를 송신자 인증으로 간주하지 않는다.
+
+## Stage 19.5 추가 확인
+
+- [x] 프런트엔드 자동 테스트와 Rust 기본/개발용 simulation 테스트
+- [x] Tauri 명령 권한 검사, 기본 3D 비활성 확인
+- [ ] Ubuntu 실제 GUI 전체 메뉴, 테마, 지도, 임무 복구, 입력 연습 및 기록 재생
+- [ ] telemetry_feed를 사용한 GUI 종단 간 안전 경고/기록/재생 및 실시간 분리
+- [ ] Ubuntu 설치 및 업데이트 후 사용자 데이터 보존
+- [ ] 내일 프로펠러 제거 후 직접 직렬, 이어서 QGC 전달 읽기 전용 검증 ([가이드](stage16-hardware-test-guide.md))

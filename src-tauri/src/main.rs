@@ -5,6 +5,7 @@ mod connection;
 mod map;
 mod map3d;
 mod missions;
+mod qgc;
 mod recording;
 mod safety;
 mod spatial;
@@ -19,6 +20,8 @@ fn main() {
         .manage(std::sync::Arc::new(recording::Recorder::default()));
     #[cfg(feature = "simulation")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        qgc::find_qgroundcontrol,
+        qgc::launch_qgroundcontrol,
         recording::start_recording,
         recording::stop_recording,
         recording::recording_status,
@@ -63,6 +66,8 @@ fn main() {
     ]);
     #[cfg(not(feature = "simulation"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        qgc::find_qgroundcontrol,
+        qgc::launch_qgroundcontrol,
         recording::start_recording,
         recording::stop_recording,
         recording::recording_status,

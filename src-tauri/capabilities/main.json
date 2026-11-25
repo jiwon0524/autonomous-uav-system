@@ -3,6 +3,7 @@
   "description": "FireScene control webview only; no remote origins",
   "webviews": ["main"],
   "permissions": [
+    "allow-find-qgroundcontrol", "allow-launch-qgroundcontrol",
     "allow-start-recording", "allow-stop-recording", "allow-recording-status", "allow-list-recordings", "allow-read-recording", "allow-read-recording-window", "allow-recording-events", "allow-rename-recording", "allow-delete-recording", "allow-export-recording",
     "allow-load-missions", "allow-save-missions", "allow-search-places", "allow-buildings-at", "allow-load-map-key", "allow-save-map-key",
     "allow-spatial-connect", "allow-spatial-disconnect", "allow-spatial-status", "allow-spatial-take",
