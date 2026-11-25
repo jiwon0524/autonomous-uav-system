@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod companion;
 mod connection;
 mod map;
 mod map3d;
@@ -9,6 +10,7 @@ mod telemetry;
 fn main() {
     let builder = tauri::Builder::default()
         .manage(connection::Manager::default())
+        .manage(companion::Manager::default())
         .manage(missions::MissionStore::default())
         .manage(std::sync::Arc::new(recording::Recorder::default()));
     #[cfg(feature = "simulation")]
@@ -32,6 +34,9 @@ fn main() {
         map::buildings_at,
         map::load_map_key,
         map::save_map_key,
+        companion::companion_connect,
+        companion::companion_disconnect,
+        companion::companion_status,
         connection::list_serial_ports,
         connection::connect_serial,
         connection::auto_connect_serial,
@@ -64,6 +69,9 @@ fn main() {
         map::buildings_at,
         map::load_map_key,
         map::save_map_key,
+        companion::companion_connect,
+        companion::companion_disconnect,
+        companion::companion_status,
         connection::list_serial_ports,
         connection::connect_serial,
         connection::auto_connect_serial,
