@@ -60,3 +60,50 @@ button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .spatial-canvas{position:relative;width:100%;height:480px;background:#121718}.spatial-canvas canvas{display:block;width:100%;height:100%;touch-action:none}.spatial-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}
 .manual-preview{margin:24px 0 0 auto;padding:16px;border:1px solid var(--line);background:var(--surface);max-width:720px}.manual-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.manual-head h2{font-size:14px;margin:4px 0}.manual-preview p,.manual-preview small{color:var(--muted);line-height:1.5}.manual-speeds{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted)}.manual-speeds button,.manual-toggle{margin:4px;padding:4px 8px;color:var(--text);background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius)}.manual-keys{display:flex;flex-wrap:wrap;gap:6px}.manual-keys span{padding:6px 8px;border:1px solid var(--line);color:var(--muted)}.manual-keys span.active{color:var(--text);background:var(--selected);border-color:var(--accent)}.manual-keys kbd{font:inherit;font-weight:700}.manual-keys small{flex-basis:100%}
 .prior-map{padding:20px 0}.prior-map p,.prior-map small{color:var(--muted);line-height:1.6}
+
+/* Experimental mission-control shell; map tiles and data sources remain unchanged. */
+.theme-dark { --bg:#0B0F12; --surface:#151B1F; --surface-raised:#1d272d; --map:#10171b; --text:#E9EEF2; --muted:#a9b5bd; --dim:#8B99A3; --accent:#61B7FF; --warning:#FDB84B; --critical:#FF5A57; --disabled:#89969f; --line:#303c43; --hover:#233039; --selected:#1c3748; --mark:#e9eef2; --mark-ink:#0b0f12; }
+.theme-day { --bg:#e9eef1; --surface:#f8fafb; --surface-raised:#edf2f5; --map:#e5ebee; --text:#182c38; --muted:#536977; --dim:#627987; --accent:#176591; --warning:#885000; --critical:#ae2f2c; --disabled:#677985; --line:#cbd7de; --hover:#e1ebf0; --selected:#dceef8; --mark:#233d4b; --mark-ink:#f8fafb; }
+.app { font-family:Pretendard,'Noto Sans KR',system-ui,sans-serif; font-variant-numeric:tabular-nums; }
+.body.nav-collapsed { grid-template-columns:62px minmax(0,1fr) 292px; }
+.body.nav-collapsed.panel-closed { grid-template-columns:62px minmax(0,1fr); }
+.nav-collapsed .nav-rail { padding:16px 8px;align-items:center; }
+.nav-collapsed .nav-rail button { width:44px;justify-content:center;padding:0; }
+.nav-collapsed .nav-rail button span,.nav-collapsed .nav-foot { display:none; }
+.nav-rail .nav-toggle { border:1px solid var(--line);margin-bottom:12px;min-height:40px; }
+.overview-workspace { padding:18px 20px 14px;overflow:hidden; }
+.overview-shell { height:100%;min-height:0;display:flex;flex-direction:column;gap:12px; }
+.overview-title { display:flex;align-items:end;justify-content:space-between;gap:12px;flex:none; }
+.overview-title h1 { margin:4px 0 0;font-size:21px;letter-spacing:-.03em; }
+.overview-title .source-label { overflow:hidden;text-overflow:ellipsis;max-width:55%; }
+.overview-shell .map-real { flex:1;height:auto;min-height:220px;border:1px solid var(--line);border-radius:2px; }
+.overview-shell .map-search input { width:320px;max-width:60%;font-size:13px;padding:8px; }
+.overview-shell .map-toolbar,.overview-shell .map-info { font-size:12px; }
+.overview-bottom { display:flex;align-items:stretch;min-height:94px;flex:none;border-top:1px solid var(--line); }
+.overview-flight-values { flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center; }
+.overview-flight-values .metric { padding:0 16px; }
+.overview-flight-values .metric:first-child { padding-left:0; }
+.overview-flight-values .metric strong { font-size:26px; }
+.overview-control { min-width:150px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:5px;padding-left:20px;border-left:1px solid var(--line); }
+.overview-control>span,.overview-control small { color:var(--muted);font-size:12px; }
+.overview-context { padding:20px 18px; }
+.context-header { display:flex;justify-content:space-between;align-items:start;gap:8px; }
+.context-header h2 { font-size:18px;margin:5px 0 0; }
+.context-header button { border:0;background:none;color:var(--muted);font-size:24px;line-height:1; }
+.context-tabs { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-bottom:1px solid var(--line);margin-top:22px; }
+.context-tabs button { color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:10px 2px; }
+.context-tabs button[aria-selected=true] { color:var(--text);border-bottom-color:var(--accent); }
+.context-content { padding:24px 0;overflow-wrap:anywhere; }
+.context-kicker { color:var(--muted);font-size:11px;letter-spacing:.06em; }
+.context-content h3 { margin:10px 0;font-size:17px;line-height:1.4; }
+.context-content p,.context-content small { color:var(--muted);font-size:13px;line-height:1.6; }
+.context-divider { border-top:1px solid var(--line);margin:26px 0; }
+.context-facts { margin:20px 0 0;display:grid;gap:12px; }
+.context-facts div { display:flex;justify-content:space-between;gap:8px; }.context-facts dt { color:var(--muted); }.context-facts dd { margin:0; }
+.context-graphs { margin-top:24px;border-top:1px solid var(--line);padding-top:16px; }.context-graphs summary { cursor:pointer; }.context-graphs .metrics { grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }.context-graphs .metric { padding:0;border:0; }.context-graphs .metric strong { font-size:20px; }.context-graphs .graphs { grid-template-columns:1fr; }
+.control-context .manual-preview { margin:0;padding:0;border:0; }.control-context .manual-head { flex-wrap:wrap; }.control-context .manual-speeds { flex-direction:column;gap:2px; }
+@media(max-width:1250px) { .body.nav-expanded { grid-template-columns:180px minmax(0,1fr) 260px; }.body.nav-expanded.panel-closed { grid-template-columns:180px minmax(0,1fr); }.nav-expanded .nav-rail { padding:16px 10px;align-items:stretch; }.nav-expanded .nav-rail button { width:auto;justify-content:flex-start;padding:0 10px; }.nav-expanded .nav-rail button span,.nav-expanded .nav-foot { display:block; }.body.nav-collapsed { grid-template-columns:62px minmax(0,1fr) 260px; }.body.nav-collapsed.panel-closed { grid-template-columns:62px minmax(0,1fr); } }
+@media(max-width:1050px) { .body.overview-body.nav-expanded { grid-template-columns:160px minmax(0,1fr) 230px; }.body.overview-body.nav-collapsed { grid-template-columns:54px minmax(0,1fr) 230px; }.body.overview-body.panel-closed.nav-expanded { grid-template-columns:160px minmax(0,1fr); }.body.overview-body.panel-closed.nav-collapsed { grid-template-columns:54px minmax(0,1fr); }.overview-workspace { padding:12px; }.overview-context { padding:16px 12px; }.overview-bottom { min-height:84px; }.overview-control { min-width:120px;padding-left:10px; }.overview-flight-values .metric { padding:0 8px; }.overview-flight-values .metric strong { font-size:21px; }.status-strip { overflow-x:auto; } }
+@media(max-height:720px) { .overview-workspace { overflow:auto; }.overview-shell { min-height:430px; }.overview-shell .map-real { min-height:220px; }.overview-bottom { min-height:80px; } }
+
+.recording-badge.recording-idle { color:var(--muted); }.recording-badge.recording-error { color:var(--critical); }

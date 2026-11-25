@@ -92,18 +92,26 @@ try:
  response=call('POST','/session',{'capabilities':{'alwaysMatch':{'browserName':'wry','tauri:options':{'application':str(pathlib.Path(args.app).resolve())}}}})
  sid=response['sessionId']; wait_for("return !!document.querySelector('nav[aria-label=\"주 메뉴\"]')",20)
  results.append({'name':'startup','status':'PASS','detail':f'{time.monotonic()-start:.2f}s to navigation'}); print('PASS startup',flush=True)
+ screenshot('overview-initial')
  check('idle main process sample',measure_main)
  names=['종합 관제','비행 제어','임무 계획','자율비행','3D 매핑','카메라','안전 관리','비행 기록','시스템 설정']
  for i,n in enumerate(names): check('menu '+n,lambda n=n,i=i:menu(n,i))
  def themes():
   click_text('Day'); wait_for("return !!document.querySelector('.theme-day')"); menu('종합 관제',0); screenshot('day'); click_text('Dark'); wait_for("return !!document.querySelector('.theme-dark')")
  check('theme switch',themes)
+ def nav_and_context():
+  menu('종합 관제',0); click_text('메뉴 접기'); wait_for("return document.querySelector('.body')?.classList.contains('nav-collapsed')"); click_text('메뉴 펼치기'); wait_for("return document.querySelector('.body')?.classList.contains('nav-expanded')")
+  click_text('기체'); wait_for("return document.body.innerText.includes('상세 비행 정보 및 그래프')"); click_text('안전'); wait_for("return document.body.innerText.includes('안전 감시는 보조 정보')"); click_text('현장'); wait_for("return document.body.innerText.includes('선택된 현장 없음')")
+ check('navigation and context panels',nav_and_context)
  def resize():
   command('POST','/window/rect',{'width':1100,'height':760}); r=command('GET','/window/rect'); assert r['width']>=850 and r['height']>=620
   command('POST','/window/maximize',{}); command('POST','/window/rect',{'width':1200,'height':800})
  check('window resize maximize restore',resize)
+ def overview_fits():
+  menu('종합 관제',0); assert js("const e=document.querySelector('.overview-workspace');return e.scrollHeight<=e.clientHeight+1")
+ check('overview workspace fits 1200x800',overview_fits)
  def keyboard():
-  menu('종합 관제',0)
+  menu('종합 관제',0); click_text('입력 미리보기')
   if args.xdotool:
    wins=subprocess.check_output([args.xdotool,'search','--onlyvisible','--pid',str(find_main_pid())],env=env,text=True).splitlines()
    if len(wins)!=1: raise RuntimeError('expected exactly one test window')
@@ -123,7 +131,9 @@ try:
   click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
   js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',code:'KeyW'}))")
   wait_for("return document.body.innerText.includes('입력 시간 초과')",5)
-  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout'
+  click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
+  click_text('현장'); click_text('입력 미리보기'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
+  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout, panel switch reset'
  check('offline practice basic',keyboard)
  def map_search():
   menu('종합 관제',0); wait_for("return !!document.querySelector('[aria-label=\"위치 검색\"]')")
@@ -156,7 +166,8 @@ try:
   command('POST','/element/'+eid+'/clear',{}); command('POST','/element/'+eid+'/value',{'text':'QA isolated mission'})
   click_text('작성 중 저장'); wait_for("return document.body.innerText.includes('작성 중 임무를 저장했습니다')")
   click_text('복제'); wait_for("return document.body.innerText.includes('복제본을 작성 중 상태로 저장했습니다')")
-  return 'created and duplicated isolated draft'
+  menu('종합 관제',0); wait_for("return document.querySelector('.header-context')?.innerText.includes('QA isolated mission')")
+  return 'created and duplicated isolated draft; overview mission shown'
  check('isolated mission draft and duplicate',draft_mission)
  if args.dev:
   def sim_connect():
@@ -167,6 +178,9 @@ try:
    wait_for("return document.body.innerText.includes('42 / 1')",15)
    return 'development feed system 42, simulation receiver'
   check('simulation heartbeat receive',sim_connect)
+  def overview_telemetry():
+   menu('종합 관제',0); wait_for("return document.querySelector('.overview-flight-values')?.innerText.includes('m') && document.body.innerText.includes('PX4 HEARTBEAT 수신')")
+  check('overview live telemetry',overview_telemetry)
   check('simulation main process sample',measure_main)
   def recording():
    menu('비행 기록',7); wait_for("return !!document.querySelector('[aria-label=\"기록 이름\"]')")
