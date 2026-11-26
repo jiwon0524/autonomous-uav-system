@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+*.log
+*.tmp
+.cache/
+.vite/
+.env
+.env.local
+.env.*.local

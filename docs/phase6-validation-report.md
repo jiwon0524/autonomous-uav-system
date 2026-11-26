@@ -2,6 +2,10 @@
 
 2026-11-26. 소프트웨어·합성 GUI와 실제 Windows/FC 시험을 구분한다. 기존 Phase 4의 18개와 Phase 5의 20개 평가를 대체하지 않는다. 증거와 범위는 `phase6-integration-report.md`, `phase6-brand-validation.md`, `phase6-pending-validation.md`, `phase6-installer-design.md` 참조.
 
+## 공개용 소스 보존 평가
+
+공개 main에서 삭제된 75개와 이름 변경 감지로 분류된 기존 대시보드 설정 2개를 원래 내용으로 복원했다. 기존 30개 기준과 기존 판정은 아래 표 그대로 유지한다. 팀원 알고리즘을 실행하거나 검증한 것은 아니다. 최종 커밋 패키지 및 Windows 결과는 별도로 검증해야 한다. 실제 Windows, 물리 키보드·COM, KOA FC, 실제 텔레메트리·연결 복구 및 PX4 SITL은 NOT TESTED다.
+
 | 번호 | 기준 | 판정 | 근거와 잔여 |
 |---|---|---|---|
 | 1 | Phase 1–5 통합 | PARTIAL | 코드·이력 대조 및 합성 GUI; 외부 장치와 세부 조합 미검증. |
