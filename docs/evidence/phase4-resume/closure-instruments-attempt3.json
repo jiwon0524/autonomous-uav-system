@@ -1,0 +1,7 @@
+[
+  {
+    "name": "fixed synthetic instrument values",
+    "status": "FAIL",
+    "detail": "AssertionError: condition timed out: return document.body.innerText.includes('GPS 위성')"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "identifier": "main",
+  "description": "FireScene control webview only; no remote origins",
+  "webviews": ["main"],
+  "permissions": [
+    "allow-virtual-start", "allow-virtual-input", "allow-virtual-status", "allow-virtual-stop", "allow-virtual-lock", "allow-virtual-fault", "allow-virtual-replay-start", "allow-virtual-replay-stop",
+    "allow-find-qgroundcontrol", "allow-launch-qgroundcontrol",
+    "allow-start-recording", "allow-stop-recording", "allow-recording-status", "allow-list-recordings", "allow-read-recording", "allow-read-recording-window", "allow-recording-events", "allow-rename-recording", "allow-delete-recording", "allow-export-recording",
+    "allow-load-missions", "allow-save-missions", "allow-search-places", "allow-buildings-at", "allow-load-map-key", "allow-save-map-key",
+    "allow-spatial-connect", "allow-spatial-disconnect", "allow-spatial-status", "allow-spatial-take",
+    "allow-camera-connect", "allow-camera-disconnect", "allow-camera-status", "allow-camera-take-frame",
+    "allow-companion-connect", "allow-companion-disconnect", "allow-companion-status",
+    "allow-connect-forwarded", "allow-list-serial-ports", "allow-connect-serial", "allow-auto-connect-serial", "allow-set-auto-device",
+    "allow-connect-simulation", "allow-disconnect-serial", "allow-connection-status", "allow-connection-summary", "allow-acknowledge-alert",
+    "allow-simulation-available", "allow-replay-guard-required", "allow-map3d-available", "allow-map3d-is-open", "allow-open-map3d",
+    "core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-is-fullscreen", "core:window:allow-set-fullscreen"
+  ]
+}

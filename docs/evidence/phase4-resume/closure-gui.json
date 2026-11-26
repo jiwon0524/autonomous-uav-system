@@ -1,0 +1,387 @@
+[
+  {
+    "name": "first run setup and skip",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "startup",
+    "status": "PASS",
+    "detail": "2.70s to navigation"
+  },
+  {
+    "name": "idle main process sample",
+    "status": "PASS",
+    "detail": {
+      "interval_seconds": 2,
+      "samples": [
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 241.171875,
+            "pss_mib": 124.50390625,
+            "cpu_percent": 1.9999090551311567
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 493.515625,
+            "pss_mib": 342.787109375,
+            "cpu_percent": 6.999681692959048
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 241.1953125,
+            "pss_mib": 124.505859375,
+            "cpu_percent": 1.4998781731483402
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 497.30859375,
+            "pss_mib": 346.5732421875,
+            "cpu_percent": 2.9997563462966803
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 241.1953125,
+            "pss_mib": 124.52734375,
+            "cpu_percent": 1.4998702364681533
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 501.66015625,
+            "pss_mib": 350.931640625,
+            "cpu_percent": 3.9996539639150757
+          },
+          "other": {}
+        }
+      ],
+      "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+    }
+  },
+  {
+    "name": "menu 종합 관제",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 비행 제어",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 임무 계획",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 자율비행",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 3D 매핑",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 카메라",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 안전 관리",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 비행 기록",
+    "status": "PASS",
+    "detail": "navigation active; screenshot saved"
+  },
+  {
+    "name": "menu 시스템 설정",
+    "status": "PASS",
+    "detail": "navigation active; screenshot skipped for key privacy"
+  },
+  {
+    "name": "theme switch",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "focus views",
+    "status": "PASS",
+    "detail": "focus and restore; safety and command lock remain visible"
+  },
+  {
+    "name": "native fullscreen",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "flight and autonomy states",
+    "status": "PASS",
+    "detail": "unavailable attitude, expandable graphs and locked autonomy"
+  },
+  {
+    "name": "3D controls and WebGL resize",
+    "status": "PASS",
+    "detail": "connection controls accessible; WebGL backing size follows focus resize"
+  },
+  {
+    "name": "matrix 910x512",
+    "status": "PASS",
+    "detail": "window 910x512; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "matrix 1093x614",
+    "status": "PASS",
+    "detail": "window 1093x614; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "matrix 1366x768",
+    "status": "PASS",
+    "detail": "window 1366x768; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "matrix 1440x900",
+    "status": "PASS",
+    "detail": "window 1440x900; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "matrix 1920x1080",
+    "status": "PASS",
+    "detail": "window 1920x1080; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "matrix 2560x1440",
+    "status": "PASS",
+    "detail": "window 2560x1440; both themes, nine menus; safety and lock in viewport"
+  },
+  {
+    "name": "navigation and context panels",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "window resize maximize restore",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "overview workspace fits 1200x800",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "offline practice basic",
+    "status": "FAIL",
+    "detail": "AssertionError: condition timed out: return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')",
+    "diagnostic": {
+      "reason": "연결 및 최신 비행 모드를 확인하세요",
+      "visibility": "visible",
+      "focus": false
+    }
+  },
+  {
+    "name": "live map search",
+    "status": "PASS",
+    "detail": "20 results; location explicitly selected"
+  },
+  {
+    "name": "experimental globe in Tauri",
+    "status": "PASS",
+    "detail": "Tauri WebKit globe/flat and retained mission selection"
+  },
+  {
+    "name": "global context loss isolation",
+    "status": "PASS",
+    "detail": "synthetic context loss event, warning and tactical return"
+  },
+  {
+    "name": "map layer selection and 3D disabled",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "map main process sample",
+    "status": "PASS",
+    "detail": {
+      "interval_seconds": 2,
+      "samples": [
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 251.9765625,
+            "pss_mib": 135.939453125,
+            "cpu_percent": 3.4996892241101274
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 801.44140625,
+            "pss_mib": 651.5126953125,
+            "cpu_percent": 19.99822413777215
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 251.984375,
+            "pss_mib": 135.947265625,
+            "cpu_percent": 1.999904550569082
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 781.21484375,
+            "pss_mib": 631.2861328125,
+            "cpu_percent": 2.4998806882113525
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 251.95703125,
+            "pss_mib": 135.919921875,
+            "cpu_percent": 1.4999400803861744
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 783.33984375,
+            "pss_mib": 633.4111328125,
+            "cpu_percent": 2.4999001339769573
+          },
+          "other": {}
+        }
+      ],
+      "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+    }
+  },
+  {
+    "name": "QGroundControl missing executable error",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "settings groups",
+    "status": "PASS",
+    "detail": "map and aircraft shortcuts reach their settings"
+  },
+  {
+    "name": "isolated mission draft and duplicate",
+    "status": "PASS",
+    "detail": "created and duplicated isolated draft; overview mission shown"
+  },
+  {
+    "name": "mission delete confirmation cancel",
+    "status": "PASS",
+    "detail": "native confirmation cancelled; isolated mission remains"
+  },
+  {
+    "name": "simulation heartbeat receive",
+    "status": "PASS",
+    "detail": "simulation receiver and measured frame rate and heartbeat interval"
+  },
+  {
+    "name": "compact live source and safety",
+    "status": "PASS",
+    "detail": "map canvas 150px; workspace scroll overflow 0px"
+  },
+  {
+    "name": "global synthetic aircraft heading",
+    "status": "PASS",
+    "detail": "synthetic heading marker and simulation source"
+  },
+  {
+    "name": "simulation safety event display",
+    "status": "PASS",
+    "detail": "synthetic battery warning with timestamp shown"
+  },
+  {
+    "name": "simulation flight instruments",
+    "status": "PASS",
+    "detail": "synthetic attitude shown in the instrument"
+  },
+  {
+    "name": "overview live telemetry",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "simulation main process sample",
+    "status": "PASS",
+    "detail": {
+      "interval_seconds": 2,
+      "samples": [
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 257.81640625,
+            "pss_mib": 138.484375,
+            "cpu_percent": 2.4999005114599155
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 833.796875,
+            "pss_mib": 683.05078125,
+            "cpu_percent": 10.999562250423626
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 257.2265625,
+            "pss_mib": 137.89453125,
+            "cpu_percent": 1.9999145316688078
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 814.18359375,
+            "pss_mib": 663.4375,
+            "cpu_percent": 9.499594025426838
+          },
+          "other": {}
+        },
+        {
+          "main": {
+            "count": 1,
+            "rss_mib": 256.99609375,
+            "pss_mib": 137.6640625,
+            "cpu_percent": 1.4999364049405377
+          },
+          "webkit": {
+            "count": 2,
+            "rss_mib": 811.88671875,
+            "pss_mib": 661.140625,
+            "cpu_percent": 6.999703223055843
+          },
+          "other": {}
+        }
+      ],
+      "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+    }
+  },
+  {
+    "name": "simulation recording and replay",
+    "status": "PASS",
+    "detail": "low battery warning; synthetic record saved, delete cancelled, replayed, paused and exported to isolated data"
+  },
+  {
+    "name": "simulation loss and manual reconnect",
+    "status": "PASS",
+    "detail": "UDP simulation loss clears instruments, manual new session restores data, user disconnect stays offline"
+  },
+  {
+    "name": "process restart data preservation",
+    "status": "PASS",
+    "detail": "isolated mission, recording, theme and first-run completion survive process restart"
+  }
+]

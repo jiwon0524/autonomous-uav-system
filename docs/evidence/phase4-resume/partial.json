@@ -1,0 +1,7 @@
+[
+  {
+    "name": "partial telemetry interruption and recovery",
+    "status": "PASS",
+    "detail": "five independently interrupted message classes age and recover while heartbeat and another field stay live"
+  }
+]

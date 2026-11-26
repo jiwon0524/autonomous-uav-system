@@ -1,0 +1,10 @@
+html,body { margin:0; background:#0b0f12; }
+#launch-screen { position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#0b0f12;color:#e9eef2;font-family:system-ui,sans-serif; }
+.launch-inner { position:relative;width:min(900px,calc(100% - 48px));height:min(600px,calc(100% - 48px));min-height:320px;overflow:hidden;border:1px solid #28343b;background:#0b0f12; }
+.launch-top,.launch-bottom { position:absolute;left:28px;right:28px;display:flex;align-items:center;gap:12px;color:#8b99a3;font-size:10px;letter-spacing:.15em; }
+.launch-top { top:24px; }.launch-bottom { bottom:24px;justify-content:space-between; }.launch-top span:last-child { margin-left:auto; }.launch-top img { width:28px;height:28px; }
+.launch-art { position:absolute;width:65%;right:-4%;top:11%;height:76%;opacity:.72;animation:launch-reveal .8s ease-out both; }.launch-art img { width:100%;height:100%;object-fit:contain; }
+.launch-copy { position:absolute;left:8%;top:38%;animation:launch-reveal .5s ease-out both; }.launch-copy>span { color:#ff9876;font-size:10px;letter-spacing:.12em; }.launch-copy h1 { font-size:clamp(32px,6vw,60px);letter-spacing:.15em;margin:12px 0 4px;font-weight:600; }.launch-copy p { font-size:11px;letter-spacing:.18em;color:#aebac2; }.launch-status { display:flex;align-items:center;gap:10px;margin-top:35px;font-size:12px;color:#aebac2; }.launch-status i { width:22px;height:2px;background:#61b7ff;animation:launch-pulse 1.4s ease-in-out infinite; } #launch-retry { margin-top:15px;padding:9px 14px;background:#1a252c;color:#e9eef2;border:1px solid #607580;cursor:pointer; }
+@keyframes launch-reveal { from { opacity:0;transform:translateY(5px) } to { opacity:1;transform:none } } @keyframes launch-pulse { 50% { opacity:.3 } }
+@media(max-width:600px) { .launch-art { width:85%;right:-25%;opacity:.35; }.launch-top,.launch-bottom { left:16px;right:16px; }.launch-top span:last-child { display:none; }.launch-copy { left:7%; } }
+@media(prefers-reduced-motion:reduce) { .launch-art,.launch-copy,.launch-status i { animation:none; } }

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "serial automatic recovery and manual disconnect",
+    "status": "PASS",
+    "detail": "approved PTY auto connection, new session after loss, three failed retries, explicit re-enable and manual disconnect with device still present"
+  }
+]

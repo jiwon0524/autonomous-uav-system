@@ -1,0 +1,30 @@
+[
+  {
+    "name": "fixed synthetic instrument values",
+    "status": "PASS",
+    "detail": {
+      "attitude": {
+        "Yaw": "0.0",
+        "Roll": "0.0",
+        "Pitch": "0.0",
+        "Heading": "0.0"
+      },
+      "flight_data": {
+        "상승 속도 (+상승)": "0.8 m/s",
+        "상대 고도": "12.0 m",
+        "착륙 상태": "MAV_LANDED_STATE_ON_GROUND",
+        "지상 속도": "3.5 m/s",
+        "방향 · 북쪽 기준": "0.0 °",
+        "해발 고도": "123.0 m",
+        "전류": "2.5 A",
+        "대기 속도": "4.0 m/s",
+        "배터리": "85.0 %",
+        "전압": "15.7 V"
+      },
+      "gps_fix": 3,
+      "satellites": 12,
+      "armed": "DISARMED",
+      "mode": "Position"
+    }
+  }
+]

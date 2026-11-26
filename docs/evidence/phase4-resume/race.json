@@ -1,0 +1,7 @@
+[
+  {
+    "name": "controlled async connection ordering",
+    "status": "PASS",
+    "detail": "held old status across connect; delayed disconnect failure across reconnect; disconnect during connect; subsequent reconnect; actual Tauri invocations counted"
+  }
+]

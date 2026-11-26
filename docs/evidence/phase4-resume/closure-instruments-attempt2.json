@@ -1,0 +1,7 @@
+[
+  {
+    "name": "fixed synthetic instrument values",
+    "status": "FAIL",
+    "detail": "AssertionError: condition timed out: return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='시뮬레이션 수신 시작'&&!e.disabled)"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "missing map key handling",
+    "status": "PASS",
+    "detail": "missing-key guidance shown and search rejected without asking for normal map results"
+  }
+]

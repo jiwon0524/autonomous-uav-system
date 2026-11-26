@@ -1,0 +1,16 @@
+[
+  {
+    "name": "connection recording and session separation",
+    "status": "PASS",
+    "detail": {
+      "loss_phases": [
+        "CONNECTED",
+        "CONNECTION_LOST"
+      ],
+      "battery_warning_recorded": true,
+      "new_session_stops_previous_recording": true,
+      "manual_disconnect_recorded": true,
+      "format_version": 1
+    }
+  }
+]

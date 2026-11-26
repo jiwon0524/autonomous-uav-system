@@ -1,0 +1,31 @@
+[package]
+name = "firescene-gcs"
+version = "0.1.1"
+description = "FireScene ground control station"
+edition = "2021"
+
+[features]
+default = []
+simulation = []
+# Requires a separately hosted, provider-approved HTTPS page; not enabled in release builds.
+experimental-vworld-3d = []
+
+[[example]]
+name = "telemetry_feed"
+required-features = ["simulation"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+mavlink = { version = "0.21.0", default-features = false, features = ["std", "dialect-common"] }
+serialport = "4.10.1"
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
+
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "query"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Devices_Communication"] }

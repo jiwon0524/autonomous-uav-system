@@ -1,0 +1,60 @@
+import { memo, useSyncExternalStore } from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import type { Connection } from './Connection';
+type Field = { value: number | null; text: string | null; unit: string; status: 'LIVE' | 'STALE' | 'INVALID'; timestamp_ms: number; source: string; system_id: number; component_id: number };
+type Point = { timestamp_ms:number; value:number|null };
+export type View = { fields: Record<string,Field>; graphs: Record<string,Point[]>; connected: boolean };
+export type SafetyEvent = { id:number; code:string; severity:string; message:string; occurred_ms:number; resolved_ms:number|null; resolution:string|null; acknowledged:boolean; session:number; system_id:number|null; component_id:number|null; source:string; message_source:string|null };
+export type SafetyView = { reachable?:boolean; overall:string; connection:string; battery:string; gps:string; sensors:string; freshness:string; armed:string; mode:string; landed:string; source:string; session:number; events:SafetyEvent[] };
+export const emptySafety: SafetyView = { reachable:false,overall:'UNKNOWN',connection:'UNKNOWN',battery:'UNKNOWN',gps:'UNKNOWN',sensors:'UNKNOWN',freshness:'UNKNOWN',armed:'UNKNOWN',mode:'UNKNOWN',landed:'UNKNOWN',source:'OFFLINE',session:0,events:[] };
+let safetyCurrent=emptySafety;
+
+const empty: View = { fields:{},graphs:{},connected:false }; let current=empty; let timer: number | undefined; let inflight=false; let generation=0; const listeners=new Set<()=>void>();
+function subscribe(fn:()=>void) {
+  listeners.add(fn);
+  if (listeners.size===1 && isTauri()) {
+    const token=++generation;
+    const update=async()=>{
+      if(inflight) return; inflight=true; let deadline:number|undefined;
+      try {
+        const state=await Promise.race([invoke<Connection & {telemetry:View; safety:SafetyView}>('connection_status'), new Promise<never>((_,reject)=>{deadline=window.setTimeout(()=>reject(new Error('상태 조회 시간 초과')),1500);})]);
+        if(token!==generation)return;
+        current=state.phase==='CONNECTED' ? {...state.telemetry,connected:true} : empty; safetyCurrent=state.safety ? {...state.safety,reachable:true} : emptySafety;
+      } catch {
+        if(token!==generation)return;
+        current=empty; safetyCurrent={...safetyCurrent,reachable:false,overall:'UNKNOWN',connection:'UNKNOWN',battery:'UNKNOWN',gps:'UNKNOWN',sensors:'UNKNOWN',freshness:'UNKNOWN',armed:'UNKNOWN',mode:'UNKNOWN',landed:'UNKNOWN'};
+      } finally {
+        if(deadline!==undefined)window.clearTimeout(deadline); inflight=false; if(token===generation)listeners.forEach(f=>f());
+      }
+    };
+    void update(); timer=window.setInterval(()=>void update(),500);
+  }
+  return ()=>{ listeners.delete(fn); if(!listeners.size) { generation++; if(timer!==undefined)window.clearInterval(timer); timer=undefined; current=empty; safetyCurrent=emptySafety; } };
+}
+export function useSafety() { return useSyncExternalStore(subscribe,()=>safetyCurrent,()=>emptySafety); }
+export function useTelemetry() { return useSyncExternalStore(subscribe,()=>current,()=>empty); }
+export function createGpsSelector() {
+  let lastKey=''; let selected:Record<string,Field>={};
+  return (fields:Record<string,Field>) => {
+    const lat=fields.gps_lat, lon=fields.gps_lon, heading=fields.heading;
+    const key=JSON.stringify([lat||null,lon||null,heading||null]);
+    if(key!==lastKey) { lastKey=key; selected={}; if(lat)selected.gps_lat=lat;if(lon)selected.gps_lon=lon;if(heading)selected.heading=heading; }
+    return selected;
+  };
+}
+const selectGps=createGpsSelector();
+export function useGpsTelemetry() { return useSyncExternalStore(subscribe,()=>selectGps(current.fields),()=>selectGps(empty.fields)); }
+
+const label=(f:Field|undefined) => !f ? (current.connected ? '미수신' : '미연결') : f.status==='STALE' ? '오래됨' : f.status==='INVALID' ? '무효' : '';
+function val(f:Field|undefined, digits=1) { return f?.status==='LIVE' ? f.text ?? (f.value===null ? '—' : f.value.toFixed(digits)) : '—'; }
+function Cell({name,field,digits=1}:{name:string;field?:Field;digits?:number}) { return <div className="metric"><span>{name}</span><div><strong>{val(field,digits)}</strong><small>{field?.unit || ''}</small></div><small className="data-status">{label(field)}</small></div>; }
+export const LiveStrip = memo(function LiveStrip() { const {fields:f}=useTelemetry(); return <><div><span>비행 모드</span><b>{f.mode?.status==='LIVE' ? val(f.mode) : label(f.mode)}</b></div><div><span>ARM</span><b>{f.armed?.status==='LIVE' ? val(f.armed) : label(f.armed)}</b></div><div><span>GPS</span><b>{f.gps_fix?.status==='LIVE' ? `Fix ${val(f.gps_fix,0)}` : label(f.gps_fix)}</b></div><div><span>배터리</span><b>{f.battery?.status==='LIVE' ? `${val(f.battery,0)}%` : label(f.battery)}</b></div></>; });
+export const OverviewFlightStrip = memo(function OverviewFlightStrip() { const {fields:f}=useTelemetry(); return <div className="overview-flight-values"><Cell name="상대 고도" field={f.relative_alt}/><Cell name="지상 속도" field={f.ground_speed}/><Cell name="기체 방향" field={f.heading} digits={0}/></div>; });
+export const OverviewTelemetry = memo(function OverviewTelemetry() { const t=useTelemetry(), f=t.fields; return <><div className="metrics"><Cell name="상대 고도" field={f.relative_alt}/><Cell name="지상 속도" field={f.ground_speed}/><Cell name="기체 방향" field={f.heading} digits={0}/><Cell name="배터리" field={f.battery} digits={0}/><Cell name="GPS 위성" field={f.satellites} digits={0}/></div><div className="telemetry-extra"><span>전압 {val(f.voltage,2)} V · {label(f.voltage)||'수신'}</span><span>GPS 원시 좌표 {val(f.gps_lat,7)}, {val(f.gps_lon,7)} · {label(f.gps_lat)||'수신'}</span><span>최근 수신 {Math.max(0,...Object.values(f).map(x=>x.timestamp_ms)) ? new Date(Math.max(...Object.values(f).map(x=>x.timestamp_ms))).toLocaleTimeString() : '없음'}</span></div><Graphs view={t} /></>; });
+// Graphs are sourced from the shared snapshot and never interpolate gaps.
+function Graphs({view}:{view:View}) { return <div className="graphs">{[['battery','배터리'],['relative_alt','상대 고도'],['ground_speed','지상 속도'],['roll','Roll'],['pitch','Pitch'],['yaw','Yaw']].map(([key,title])=><Graph key={key} title={title} points={view.graphs[key]||[]} field={view.fields[key]}/>)}</div>; }
+function Graph({title,points,field}:{title:string;points:Point[];field?:Field}) { const valid=points.filter(p=>p.value!==null); const min=Math.min(...valid.map(p=>p.value!),0), max=Math.max(...valid.map(p=>p.value!),1); const start=points[0]?.timestamp_ms||0, end=points.at(-1)?.timestamp_ms||0; let previous=0; const segments:string[]=[]; let path=''; points.forEach(p=>{ if(p.value===null || (previous && p.timestamp_ms-previous>3000)) { if(path) segments.push(path); path=''; } if(p.value!==null) { const x=10+(p.timestamp_ms-start)/Math.max(1,end-start)*180; const y=50-(p.value-min)/Math.max(0.001,max-min)*40; path+=`${path?' L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`; previous=p.timestamp_ms; } }); if(path) segments.push(path); return <div className="graph"><div><span>{title}</span><small>{label(field)||'수신'}</small></div><svg viewBox="0 0 200 60" role="img" aria-label={`${title} 기록`}><path d="M10 52H190" className="graph-axis"/>{segments.map((d,i)=><path d={d} className="graph-line" key={i}/>)}</svg></div>; }
+export const LiveInspector = memo(function LiveInspector() { const {fields:f}=useTelemetry(); const names=[['비행 데이터',f.relative_alt],['비행 모드',f.mode],['ARM 상태',f.armed],['GPS',f.gps_fix],['배터리',f.battery]] as const; return <dl className="state-list">{names.map(([name,field])=><div key={name}><dt>{name}</dt><dd>{field?.status==='LIVE' ? `${val(field,0)} ${field.unit}` : label(field)}</dd></div>)}</dl>; });
+export const LiveEvents = memo(function LiveEvents() { const {fields:f}=useTelemetry(); return <><p>{val(f.status_text)}</p><small>{f.status_text?.status==='LIVE' ? `수신 ${new Date(f.status_text.timestamp_ms).toLocaleTimeString()}` : label(f.status_text)}</small></>; });
+export const horizonTransform = (roll:number, pitch:number) => `translate(120 80) rotate(${-roll}) translate(0 ${pitch*2})`;
+export const FlightInstruments = memo(function FlightInstruments() { const t=useTelemetry(), f=t.fields; const roll=f.roll?.status==='LIVE' ? f.roll.value : null, pitch=f.pitch?.status==='LIVE' ? f.pitch.value : null; const live=roll!==null && pitch!==null; return <><div className="flight-layout"><section className="attitude"><div className="section-heading"><div><span className="eyebrow">자세 정보</span><h2>기체 자세</h2></div><span>{live ? '수신 중' : `${label(f.roll)||label(f.pitch)||'확인 불가'}`}</span></div><div className={live ? "horizon-wrap" : "horizon-wrap horizon-unavailable"}>{live ? <svg className="horizon" viewBox="0 0 240 160" role="img" aria-label={`인공수평계 Roll ${roll?.toFixed(1)}도 Pitch ${pitch?.toFixed(1)}도`}><defs><clipPath id="attitude-clip"><rect x="0" y="0" width="240" height="160"/></clipPath></defs><g clipPath="url(#attitude-clip)"><g transform={horizonTransform(roll!,pitch!)}><rect x="-400" y="-400" width="800" height="400" className="sky"/><rect x="-400" y="0" width="800" height="400" className="earth"/><path d="M-400 0H400 M-25 -20H25 M-25 20H25" className="horizon-line"/></g><path d="M75 80H105 L120 87 L135 80H165" className="aircraft-mark"/></g></svg> : <div className="attitude-empty"><strong>자세 정보 확인 불가</strong><span>수신되지 않았거나 오래된 데이터</span></div>}</div><div className="metrics flight-metrics"><Cell name="Roll" field={f.roll}/><Cell name="Pitch" field={f.pitch}/><Cell name="Yaw" field={f.yaw}/><Cell name="Heading" field={f.heading}/></div></section><section className="flight-data"><div className="section-heading"><div><span className="eyebrow">비행 정보</span><h2>기체 상태</h2></div></div><div className="heading-scale" aria-label="북쪽 기준 방향"><div><span>N · 0°</span><span>E · 90°</span><span>S · 180°</span><span>W · 270°</span><span>N · 360°</span></div>{f.heading?.status==='LIVE' && f.heading.value!==null && <i style={{left:`${f.heading.value / 360 * 100}%`}}/>}</div><div className="instrument-list">{[['방향 · 북쪽 기준','heading'],['상대 고도','relative_alt'],['해발 고도','msl_alt'],['지상 속도','ground_speed'],['대기 속도','air_speed'],['상승 속도 (+상승)','climb'],['배터리','battery'],['전압','voltage'],['전류','current'],['착륙 상태','landed']].map(([title,key])=><div key={key}><span>{title}</span><b>{val(f[key])} {f[key]?.unit || ''}</b><small>{label(f[key])}</small></div>)}</div><div className="command-lock"><div><b>비행 명령 잠김</b><span>모든 기체 명령을 사용할 수 없습니다</span></div></div></section></div><details className="flight-graphs"><summary>상세 비행 그래프</summary><Graphs view={t}/></details></>; });

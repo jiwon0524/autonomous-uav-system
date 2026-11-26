@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://*.vworld.kr 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' https://*.vworld.kr 'unsafe-inline'; img-src 'self' https://*.vworld.kr data: blob:; connect-src 'self' https://*.vworld.kr; font-src 'self' https://*.vworld.kr data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>FireScene GCS · VWorld 3D</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#141617;color:#f0f1ee;font:14px system-ui,sans-serif}body{display:flex;flex-direction:column}header{padding:10px 16px;background:#1b1e1f;border-bottom:1px solid #383e3c}header p{margin:4px 0;color:#a6adaa;font-size:12px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px}input,button{font:inherit;background:#222627;color:#f0f1ee;border:1px solid #383e3c;border-radius:4px;padding:7px}input{width:min(360px,65vw)}button{cursor:pointer}#map{flex:1;min-height:180px}#status{color:#e3b977}#setup{padding:12px 16px}#setup p{color:#a6adaa}#setup[hidden]{display:none}
+</style>
+<script>
+// Parser-inserted script is required because the official initializer uses document.write.
+// The page origin must itself be the HTTPS domain approved by VWorld.
+(function () {
+  if (location.protocol !== 'https:') return;
+  var key = sessionStorage.getItem('firescene-vworld-key') || '';
+  if (!/^[A-Za-z0-9-]{1,256}$/.test(key)) return;
+  var url = 'https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey=' + encodeURIComponent(key);
+  document.write('<scr' + 'ipt src="' + url + '"><\/scr' + 'ipt>');
+})();
+</script>
+</head>
+<body>
+<header><strong>VWorld 3D · 실험 기능</strong><p>사전 공간정보 · 실시간 화재 또는 건물 내부 정보가 아닙니다. 비행 안전거리나 허용 구역을 표시하지 않습니다.</p></header>
+<div id="setup"><p>VWorld에 등록된 이 HTTPS 페이지에서 API 키를 입력하세요. 키는 이 탭의 세션 저장소에 남으며 제공자 요청에 포함됩니다.</p><input id="key" type="password" autocomplete="off" aria-label="VWorld API 키"><button id="save">3D 지도 시작</button><button id="clear">키 지우기</button></div>
+<div class="toolbar"><button data-view="north">북쪽</button><button data-view="south">남쪽</button><button data-view="east">동쪽</button><button data-view="west">서쪽</button><button data-view="top">상단</button><button data-view="reset">초기화</button><span id="status" role="status">준비 중</span></div>
+<div id="map" aria-label="VWorld 3D 지도"></div>
+<script>
+(function () {
+  'use strict';
+  const status = document.getElementById('status');
+  window.addEventListener('error', () => { status.textContent='3D 리소스 오류 · 네트워크, CSP, 도메인 및 WebGL을 확인하세요'; });
+  const setup = document.getElementById('setup');
+  const stored = sessionStorage.getItem('firescene-vworld-key') || '';
+  const params = new URLSearchParams(location.hash.slice(1));
+  const parse = (name, fallback, min, max) => { const raw=params.get(name); if(raw===null || raw.trim()==='') return fallback; const n=Number(raw); return Number.isFinite(n) && n>=min && n<=max ? n : fallback; };
+  const lon = parse('lon', 126.978, -180, 180), lat = parse('lat', 37.5665, -85, 85), radius = parse('radius', 0, 0, 2000);
+  document.getElementById('save').onclick = () => { const key = document.getElementById('key').value.trim(); if (!/^[A-Za-z0-9-]{1,256}$/.test(key)) { status.textContent='API 키 형식을 확인하세요'; return; } sessionStorage.setItem('firescene-vworld-key',key); location.reload(); };
+  document.getElementById('clear').onclick = () => { sessionStorage.removeItem('firescene-vworld-key'); location.reload(); };
+  if (location.protocol !== 'https:') { status.textContent='등록된 HTTPS 도메인에서 실행해야 합니다'; return; }
+  if (!stored) { status.textContent='API 키를 입력하세요'; return; }
+  if (typeof vworldIsValid !== 'undefined' && vworldIsValid !== 'true') { status.textContent='VWorld 인증 실패 · 키와 등록 도메인 확인'; return; }
+  if (typeof vw === 'undefined') { status.textContent='SDK 초기화 실패 · 네트워크, 키, CSP 및 도메인 인증 확인'; return; }
+  try {
+    setup.hidden = true;
+    const map = new vw.Map();
+    map.setOption({mapId:'map',initPosition:new vw.CameraPosition(new vw.CoordZ(lon,lat,900),new vw.Direction(0,-55,0)),logo:true,navigation:true});
+    map.start();
+    status.textContent='SDK 시작 요청됨 · 실제 지형·건물 수신 여부는 확인 필요';
+    function camera(heading,pitch,height) {
+      if (typeof ws3d === 'undefined' || !ws3d.viewer || typeof Cesium === 'undefined') { status.textContent='카메라 준비 중'; return; }
+      ws3d.viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(lon,lat,height),orientation:{heading:Cesium.Math.toRadians(heading),pitch:Cesium.Math.toRadians(pitch),roll:0}});
+    }
+    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
+      const view=button.dataset.view;
+      if(view==='north') camera(0,-55,450); else if(view==='east') camera(90,-55,450); else if(view==='south') camera(180,-55,450); else if(view==='west') camera(270,-55,450); else if(view==='top') camera(0,-90,450); else camera(0,-55,900);
+    }));
+    if (radius > 0) status.textContent += ' · 2D 조회 반경 ' + radius + ' m (3D 범위 표시는 미구현)';
+  } catch (_) { status.textContent='3D 지도 시작 실패 · API 인증, 연결 및 WebGL을 확인하세요'; setup.hidden=false; }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FireScene GCS</title>
+    <link rel="stylesheet" href="/launch.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="launch-screen" role="status" aria-live="polite">
+      <div class="launch-inner">
+        <div class="launch-top"><img src="/firescene-mark.png" alt="" /><span>FIRESCENE / GCS</span><span>HARDWARE PREVIEW 02</span></div>
+        <div class="launch-art"><img src="/firescene-airframe.svg" alt="" /></div>
+        <div class="launch-copy"><span>AUTONOMOUS AERIAL FIRE RESPONSE</span><h1>FIRESCENE</h1><p>AEROSPACE MISSION CONTROL</p><div class="launch-status"><i></i><span id="launch-status-text">관제 화면을 불러오는 중 · Loading interface</span></div><button id="launch-retry" type="button" hidden>다시 시도 / Retry</button></div>
+        <div class="launch-bottom"><span>GROUND CONTROL STATION</span><span>READ ONLY</span></div>
+      </div>
+    </div>
+    <script src="/launch.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" fill="none">
+  <title>Conceptual FireScene quadcopter mission graphic</title>
+  <g stroke="#61b7ff" stroke-width=".7" opacity=".14">
+    <path d="M0 50H640M0 100H640M0 150H640M0 200H640M0 250H640M0 300H640M0 350H640M70 0V400M120 0V400M170 0V400M220 0V400M270 0V400M320 0V400M370 0V400M420 0V400M470 0V400M520 0V400M570 0V400"/>
+    <circle cx="320" cy="200" r="168"/><circle cx="320" cy="200" r="145" stroke-dasharray="3 7"/><path d="M320 20V380M140 200H500"/>
+  </g>
+  <g stroke="#8b99a3" stroke-width="1.2" opacity=".7">
+    <path d="M276 160 206 90l-18 18 69 72m107-20 70-70 18 18-69 72M276 240l-70 70-18-18 69-72m107 20 70 70 18-18-69-72"/>
+    <path d="m292 163 28-15 28 15 15 37-15 37-28 15-28-15-15-37z"/><path d="M301 178h38l11 22-11 22h-38l-11-22z"/><circle cx="320" cy="200" r="12"/><path d="M310 148v-12h20v12M311 252v13h18v-13"/>
+    <circle cx="196" cy="100" r="56"/><circle cx="444" cy="100" r="56"/><circle cx="196" cy="300" r="56"/><circle cx="444" cy="300" r="56"/>
+    <circle cx="196" cy="100" r="8"/><circle cx="444" cy="100" r="8"/><circle cx="196" cy="300" r="8"/><circle cx="444" cy="300" r="8"/>
+    <path d="M154 82q40 2 84 36-40-2-84-36ZM402 118q40-34 84-36-40 34-84 36ZM154 318q40-34 84-36-40 34-84 36ZM402 282q40 2 84 36-40-2-84-36Z"/>
+  </g>
+  <g stroke="#ff7849" stroke-width="1.5"><path d="M314 130h12M320 124v12M291 200h-8M357 200h-8"/><path d="M51 334h48v-26h28v-20h32v46h31m260 0h23v-33h24v-22h27v55h61" opacity=".6"/></g>
+</svg>

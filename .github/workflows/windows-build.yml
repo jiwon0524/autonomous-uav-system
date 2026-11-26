@@ -7,6 +7,9 @@ jobs:
   windows:
     runs-on: windows-2022
     timeout-minutes: 90
+    env:
+      TAURI_APP_PATH: ${{ github.workspace }}/src-tauri
+      TAURI_FRONTEND_PATH: ${{ github.workspace }}/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,10 +44,10 @@ jobs:
           $files = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe')
           if ($files.Count -ne 1) { throw "Expected one NSIS installer, found $($files.Count)" }
           New-Item -ItemType Directory -Path windows-artifact | Out-Null
-          $installer = 'windows-artifact/FireScene-GCS_0.1.0_x64-setup.exe'
+          $installer = 'windows-artifact/FireScene-GCS_0.1.1_Preview2_x64-setup.exe'
           Copy-Item -LiteralPath $files[0].FullName -Destination $installer
           $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText((Join-Path $PWD 'windows-artifact/SHA256SUMS.txt'), "$hash  FireScene-GCS_0.1.0_x64-setup.exe`n", [Text.Encoding]::ASCII)
+          [IO.File]::WriteAllText((Join-Path $PWD 'windows-artifact/SHA256SUMS.txt'), "$hash  FireScene-GCS_0.1.1_Preview2_x64-setup.exe`n", [Text.Encoding]::ASCII)
           [IO.File]::WriteAllText((Join-Path $PWD 'windows-artifact/BUILD_COMMIT.txt'), "$env:GITHUB_SHA`n", [Text.Encoding]::ASCII)
           Write-Host "Installer bytes: $((Get-Item $installer).Length)"
       - uses: actions/upload-artifact@v4

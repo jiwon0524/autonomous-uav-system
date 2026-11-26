@@ -1,0 +1,13 @@
+import { strict as assert } from 'node:assert';
+import { createConnectionEpoch } from '../src/connectionEpoch.ts';
+const epoch = createConnectionEpoch();
+const poll = epoch.capture();
+const connect = epoch.advance();
+assert.equal(epoch.isCurrent(poll), false, 'late poll must not replace a new connection');
+assert.equal(epoch.isCurrent(connect), true);
+const disconnect = epoch.advance();
+assert.equal(epoch.isCurrent(connect), false, 'queued connection must not outlive disconnect');
+assert.equal(epoch.isCurrent(disconnect), true);
+const reconnect = epoch.advance();
+assert.equal(epoch.isCurrent(disconnect), false);
+assert.equal(epoch.isCurrent(reconnect), true);

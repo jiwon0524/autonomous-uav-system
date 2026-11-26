@@ -1,0 +1,7 @@
+[
+  {
+    "name": "offline practice basic",
+    "status": "PASS",
+    "detail": "WebDriver click and synthetic DOM events: bindings, opposing input, Space, Escape, timeout, input focus, fullscreen and panel switch reset"
+  }
+]

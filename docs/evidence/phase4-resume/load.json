@@ -1,0 +1,254 @@
+[
+  {
+    "name": "GUI synthetic load 10 msg/s",
+    "status": "PASS",
+    "detail": {
+      "rate": 10,
+      "duration_s": 30,
+      "sent": 300,
+      "received": 300,
+      "process_samples": {
+        "interval_seconds": 2,
+        "samples": [
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.5625,
+              "pss_mib": 126.703125,
+              "cpu_percent": 1.9999072722778295
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 499.87890625,
+              "pss_mib": 348.150390625,
+              "cpu_percent": 5.499744998764031
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.5546875,
+              "pss_mib": 126.6953125,
+              "cpu_percent": 1.9999089741425657
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 501.3671875,
+              "pss_mib": 349.638671875,
+              "cpu_percent": 4.999772435356414
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.3984375,
+              "pss_mib": 126.4453125,
+              "cpu_percent": 2.49979815005698
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 498.71875,
+              "pss_mib": 346.896484375,
+              "cpu_percent": 4.499636670102564
+            },
+            "other": {}
+          }
+        ],
+        "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+      },
+      "two_menu_switches_s": 1.1453287709737197,
+      "gpu": "not measured"
+    }
+  },
+  {
+    "name": "GUI synthetic load 30 msg/s",
+    "status": "PASS",
+    "detail": {
+      "rate": 30,
+      "duration_s": 30,
+      "sent": 900,
+      "received": 900,
+      "process_samples": {
+        "interval_seconds": 2,
+        "samples": [
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.29296875,
+              "pss_mib": 126.33984375,
+              "cpu_percent": 2.4999022038232366
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 541.8203125,
+              "pss_mib": 389.998046875,
+              "cpu_percent": 4.999804407646473
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.30859375,
+              "pss_mib": 126.35546875,
+              "cpu_percent": 3.499863144836108
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 542.74609375,
+              "pss_mib": 390.923828125,
+              "cpu_percent": 6.499745840409915
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.31640625,
+              "pss_mib": 126.36328125,
+              "cpu_percent": 2.4999051161282195
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 543.8359375,
+              "pss_mib": 392.013671875,
+              "cpu_percent": 3.9998481858051513
+            },
+            "other": {}
+          }
+        ],
+        "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+      },
+      "two_menu_switches_s": 1.1536970990127884,
+      "gpu": "not measured"
+    }
+  },
+  {
+    "name": "GUI synthetic load 60 msg/s",
+    "status": "PASS",
+    "detail": {
+      "rate": 60,
+      "duration_s": 30,
+      "sent": 1800,
+      "received": 1800,
+      "process_samples": {
+        "interval_seconds": 2,
+        "samples": [
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.41015625,
+              "pss_mib": 126.45703125,
+              "cpu_percent": 2.9997588028886284
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 558.79296875,
+              "pss_mib": 406.970703125,
+              "cpu_percent": 6.499477406258695
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.421875,
+              "pss_mib": 126.46875,
+              "cpu_percent": 3.4997228936813727
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 559.72265625,
+              "pss_mib": 407.900390625,
+              "cpu_percent": 5.499564547213586
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.41796875,
+              "pss_mib": 126.46484375,
+              "cpu_percent": 2.9997477227004072
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 556.30078125,
+              "pss_mib": 404.478515625,
+              "cpu_percent": 4.9995795378340135
+            },
+            "other": {}
+          }
+        ],
+        "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+      },
+      "two_menu_switches_s": 1.1357360260153655,
+      "gpu": "not measured"
+    }
+  },
+  {
+    "name": "GUI synthetic load 100 msg/s",
+    "status": "PASS",
+    "detail": {
+      "rate": 100,
+      "duration_s": 30,
+      "sent": 3000,
+      "received": 3000,
+      "process_samples": {
+        "interval_seconds": 2,
+        "samples": [
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.54296875,
+              "pss_mib": 126.58984375,
+              "cpu_percent": 4.499634422675955
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 552.91015625,
+              "pss_mib": 401.087890625,
+              "cpu_percent": 6.999431324162597
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.56640625,
+              "pss_mib": 126.61328125,
+              "cpu_percent": 4.499633405815344
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 554.14453125,
+              "pss_mib": 402.322265625,
+              "cpu_percent": 4.499633405815344
+            },
+            "other": {}
+          },
+          {
+            "main": {
+              "count": 1,
+              "rss_mib": 243.578125,
+              "pss_mib": 126.625,
+              "cpu_percent": 3.9998621967134036
+            },
+            "webkit": {
+              "count": 2,
+              "rss_mib": 557.84375,
+              "pss_mib": 406.021484375,
+              "cpu_percent": 4.999827745891754
+            },
+            "other": {}
+          }
+        ],
+        "rss_note": "RSS sums may double count shared pages; CPU excludes processes that start after interval begins"
+      },
+      "two_menu_switches_s": 1.161850617005257,
+      "gpu": "not measured"
+    }
+  }
+]

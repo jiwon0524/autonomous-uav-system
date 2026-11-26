@@ -1,0 +1,7 @@
+[
+  {
+    "name": "fixed synthetic instrument values",
+    "status": "FAIL",
+    "detail": "AssertionError: button unavailable: 시뮬레이션 수신 시작"
+  }
+]

@@ -1,4 +1,0 @@
-# Optional YOLO inference (includes PyTorch) and desktop camera/display only.
-# YOLO11 support starts in Ultralytics 8.3. No CV dependencies for domain tests.
-ultralytics>=8.3,<9
-opencv-python>=4.8,<5
