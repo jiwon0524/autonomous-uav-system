@@ -1,4 +1,9 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    println!(
+        "cargo:rustc-env=FIRESCENE_BUILD_COMMIT={}",
+        std::env::var("GITHUB_SHA").unwrap_or_else(|_| "local-unverified".into())
+    );
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "find_qgroundcontrol",

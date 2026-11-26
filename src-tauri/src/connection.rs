@@ -32,6 +32,37 @@ struct Vehicle {
     mavlink_version: u8,
     heartbeat_ms: u64,
 }
+#[derive(Clone, Default, Serialize)]
+struct Diagnostics {
+    port_opened: bool,
+    os_error: Option<i32>,
+    bytes: u64,
+    messages: u64,
+    parse_errors: u64,
+    heartbeats: u64,
+    heartbeat_rejection: Option<String>,
+    first_byte_ms: Option<u64>,
+    last_byte_ms: Option<u64>,
+}
+#[derive(Clone, Serialize)]
+struct PreviousFailure {
+    port: Option<String>,
+    source: String,
+    error: String,
+    diagnostics: Diagnostics,
+}
+fn previous_failure(s: &Snapshot) -> Option<PreviousFailure> {
+    if let Some(error) = &s.error {
+        Some(PreviousFailure {
+            port: s.port.clone(),
+            source: s.source.clone(),
+            error: error.clone(),
+            diagnostics: s.diagnostics.clone(),
+        })
+    } else {
+        s.previous_failure.clone()
+    }
+}
 #[derive(Clone, Serialize)]
 pub struct Snapshot {
     phase: Phase,
@@ -40,6 +71,8 @@ pub struct Snapshot {
     vehicle: Option<Vehicle>,
     last_heartbeat_ms: Option<u64>,
     error: Option<String>,
+    diagnostics: Diagnostics,
+    previous_failure: Option<PreviousFailure>,
     #[serde(skip)]
     store: crate::telemetry::Store,
     telemetry: crate::telemetry::View,
@@ -49,6 +82,9 @@ pub struct Snapshot {
 }
 #[derive(Serialize)]
 pub struct ConnectionSummary {
+    build_commit: &'static str,
+    previous_failure: Option<PreviousFailure>,
+    diagnostics: Diagnostics,
     phase: Phase,
     port: Option<String>,
     source: String,
@@ -96,6 +132,8 @@ impl Default for Manager {
                 monitor: Arc::new(Mutex::new(Default::default())),
                 safety: Default::default(),
                 error: None,
+                diagnostics: Default::default(),
+                previous_failure: None,
             })),
             worker: Mutex::new(None),
             auto_allowed: Mutex::new(None),
@@ -125,6 +163,7 @@ impl Manager {
     pub fn disconnect(&self) {
         *self.auto_allowed.lock().unwrap() = None;
         self.stop();
+        let previous = previous_failure(&self.snapshot.lock().unwrap());
         let monitor = self.snapshot.lock().unwrap().monitor.clone();
         monitor.lock().unwrap().end_session();
         *self.snapshot.lock().unwrap() = Snapshot {
@@ -138,6 +177,8 @@ impl Manager {
             monitor,
             safety: Default::default(),
             error: None,
+            diagnostics: Default::default(),
+            previous_failure: previous,
         };
     }
     pub fn list(&self) -> Result<Vec<Port>, String> {
@@ -182,6 +223,7 @@ impl Manager {
             return Err("목록에서 확인된 USB 직렬 포트를 선택하세요.".into());
         }
         let monitor = self.snapshot.lock().unwrap().monitor.clone();
+        let previous = previous_failure(&self.snapshot.lock().unwrap());
         monitor.lock().unwrap().new_session("HARDWARE_LINK");
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::Connecting,
@@ -194,6 +236,8 @@ impl Manager {
             monitor,
             safety: Default::default(),
             error: None,
+            diagnostics: Default::default(),
+            previous_failure: previous,
         };
         let shared = self.snapshot.clone();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -260,6 +304,7 @@ impl Manager {
             .map_err(|e| e.to_string())?;
         let local_address = socket.local_addr().map_err(|e| e.to_string())?.to_string();
         let monitor = self.snapshot.lock().unwrap().monitor.clone();
+        let previous = previous_failure(&self.snapshot.lock().unwrap());
         monitor.lock().unwrap().new_session(source);
         *self.snapshot.lock().unwrap() = Snapshot {
             phase: Phase::WaitingHeartbeat,
@@ -272,6 +317,8 @@ impl Manager {
             monitor,
             safety: Default::default(),
             error: None,
+            diagnostics: Default::default(),
+            previous_failure: previous,
         };
         let shared = self.snapshot.clone();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -303,6 +350,9 @@ impl Manager {
         let mut snapshot = self.snapshot.lock().unwrap();
         assess(&mut snapshot);
         ConnectionSummary {
+            build_commit: env!("FIRESCENE_BUILD_COMMIT"),
+            previous_failure: snapshot.previous_failure.clone(),
+            diagnostics: snapshot.diagnostics.clone(),
             phase: snapshot.phase.clone(),
             port: snapshot.port.clone(),
             source: snapshot.source.clone(),
@@ -488,6 +538,33 @@ fn open_readonly(_: &str, _: u32) -> io::Result<std::fs::File> {
     ))
 }
 
+fn heartbeat_rejection(raw: &MAVLinkMessageRaw) -> Option<&'static str> {
+    if raw.message_id() != 0 {
+        return None;
+    }
+    if raw.system_id() == 0 || raw.component_id() == 0 {
+        return Some("시스템 또는 컴포넌트 ID가 0");
+    }
+    if let MAVLinkMessageRaw::V2(v) = raw {
+        if v.incompatibility_flags() != 0 {
+            return Some("지원하지 않는 MAVLink 2 호환성 플래그");
+        }
+    }
+    let p = raw.payload();
+    if p.len() != 9 {
+        return Some("HEARTBEAT 길이 오류");
+    }
+    if p[5] != 12 {
+        return Some("PX4 autopilot이 아님");
+    }
+    if !matches!(p[4], 1..=4 | 10..=15 | 19..=24 | 29 | 35 | 43 | 47) {
+        return Some("지원하지 않는 기체 유형");
+    }
+    if p[8] != 3 {
+        return Some("지원하지 않는 HEARTBEAT 버전");
+    }
+    None
+}
 fn valid_vehicle(raw: &MAVLinkMessageRaw) -> Option<Vehicle> {
     if raw.message_id() != 0 || raw.system_id() == 0 || raw.component_id() == 0 {
         return None;
@@ -541,6 +618,7 @@ fn assess(s: &mut Snapshot) {
 struct BoundedReader<R> {
     inner: R,
     remaining: usize,
+    shared: Arc<Mutex<Snapshot>>,
 }
 impl<R: Read> Read for BoundedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -550,6 +628,16 @@ impl<R: Read> Read for BoundedReader<R> {
         let limit = buf.len().min(self.remaining);
         let n = self.inner.read(&mut buf[..limit])?;
         self.remaining -= n;
+        if n > 0 {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let mut s = self.shared.lock().unwrap();
+            s.diagnostics.bytes += n as u64;
+            s.diagnostics.first_byte_ms.get_or_insert(now);
+            s.diagnostics.last_byte_ms = Some(now);
+        }
         Ok(n)
     }
 }
@@ -576,6 +664,7 @@ fn run_with_timeouts(
         Err(e) => {
             let mut s = shared.lock().unwrap();
             s.phase = Phase::Error;
+            s.diagnostics.os_error = e.raw_os_error();
             s.error = Some(match e.kind() {
                 io::ErrorKind::NotFound => format!("장치 미연결 또는 직렬 포트 없음: {e}"),
                 io::ErrorKind::PermissionDenied if cfg!(windows) => format!("직렬 포트 접근 거부: 다른 프로그램의 포트 사용 또는 장치 권한을 확인하세요. {e}"),
@@ -592,6 +681,7 @@ fn run_with_timeouts(
     {
         let mut s = shared.lock().unwrap();
         s.phase = Phase::WaitingHeartbeat;
+        s.diagnostics.port_opened = true;
     }
     receive(file, shared, cancel, wait_timeout, loss_timeout);
 }
@@ -641,6 +731,7 @@ fn receive<R: Read>(
     let mut reader = MavlinkReader::new(BoundedReader {
         inner: input,
         remaining: 4096,
+        shared: shared.clone(),
     });
     loop {
         if cancel.load(Ordering::SeqCst) {
@@ -649,6 +740,16 @@ fn receive<R: Read>(
         reader.get_mut().remaining = 4096;
         match reader.read_any_raw_message::<MavMessage>() {
             Ok(raw) => {
+                {
+                    let mut s = shared.lock().unwrap();
+                    s.diagnostics.messages += 1;
+                    if raw.message_id() == 0 {
+                        s.diagnostics.heartbeats += 1;
+                        if let Some(reason) = heartbeat_rejection(&raw) {
+                            s.diagnostics.heartbeat_rejection = Some(reason.to_owned());
+                        }
+                    }
+                }
                 if let Some(v) = valid_vehicle(&raw) {
                     let id = (v.system_id, v.component_id);
                     if identity.is_none() || identity == Some(id) {
@@ -684,7 +785,7 @@ fn receive<R: Read>(
             {
                 thread::sleep(Duration::from_millis(50))
             }
-            Err(MessageReadError::Parse(_)) => (),
+            Err(MessageReadError::Parse(_)) => shared.lock().unwrap().diagnostics.parse_errors += 1,
             Err(e) => {
                 let mut s = shared.lock().unwrap();
                 s.phase = Phase::ConnectionLost;
@@ -843,6 +944,8 @@ mod tests {
             monitor: Arc::new(Mutex::new(Default::default())),
             safety: Default::default(),
             error: None,
+            diagnostics: Default::default(),
+            previous_failure: None,
         }))
     }
     fn wait_for(s: &Arc<Mutex<Snapshot>>, pred: impl Fn(&Phase) -> bool) {
@@ -854,6 +957,44 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
         }
         panic!("state transition timed out");
+    }
+    #[test]
+    fn failed_session_is_preserved_without_mixing_new_counters() {
+        let manager = Manager::default();
+        {
+            let mut s = manager.snapshot.lock().unwrap();
+            s.port = Some("COM4".into());
+            s.source = "HARDWARE_LINK".into();
+            s.error = Some("timeout".into());
+            s.diagnostics.bytes = 123;
+        }
+        manager.disconnect();
+        let snapshot = manager.snapshot();
+        assert_eq!(snapshot.diagnostics.bytes, 0);
+        let previous = snapshot.previous_failure.unwrap();
+        assert_eq!(previous.diagnostics.bytes, 123);
+        assert_eq!(previous.error, "timeout");
+        manager.disconnect();
+        assert_eq!(
+            manager
+                .snapshot()
+                .previous_failure
+                .unwrap()
+                .diagnostics
+                .bytes,
+            123
+        );
+    }
+    #[test]
+    fn heartbeat_diagnostic_reports_rejection_without_relaxing_filter() {
+        let mut reader = MavlinkReader::new(std::io::Cursor::new(frame(3)));
+        let raw = reader.read_any_raw_message::<MavMessage>().unwrap();
+        assert_eq!(heartbeat_rejection(&raw), Some("PX4 autopilot이 아님"));
+        assert!(valid_vehicle(&raw).is_none());
+        let mut reader = MavlinkReader::new(std::io::Cursor::new(frame(12)));
+        let raw = reader.read_any_raw_message::<MavMessage>().unwrap();
+        assert!(heartbeat_rejection(&raw).is_none());
+        assert!(valid_vehicle(&raw).is_some());
     }
     #[test]
     fn mavlink2_crc_and_unverified_signatures() {
@@ -1150,7 +1291,19 @@ mod tests {
         assert!(matches!(s.lock().unwrap().phase, Phase::WaitingHeartbeat));
         master.write_all(&frame(12)).unwrap();
         wait_for(&s, |p| matches!(p, Phase::Connected));
-        assert_eq!(s.lock().unwrap().vehicle.as_ref().unwrap().system_id, 42);
+        {
+            let snapshot = s.lock().unwrap();
+            assert_eq!(snapshot.vehicle.as_ref().unwrap().system_id, 42);
+            assert!(snapshot.diagnostics.port_opened);
+            assert!(snapshot.diagnostics.bytes >= 34);
+            assert_eq!(snapshot.diagnostics.messages, 2);
+            assert_eq!(snapshot.diagnostics.heartbeats, 2);
+            assert_eq!(
+                snapshot.diagnostics.heartbeat_rejection.as_deref(),
+                Some("PX4 autopilot이 아님")
+            );
+            assert!(snapshot.diagnostics.first_byte_ms.is_some());
+        }
         drop(master);
         wait_for(&s, |p| matches!(p, Phase::ConnectionLost));
         h.join().unwrap();
