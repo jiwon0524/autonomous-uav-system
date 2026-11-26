@@ -788,7 +788,7 @@ fn run_with_timeouts(
     wait_timeout: Duration,
     loss_timeout: Duration,
 ) {
-    let file = match open_readonly(&port, baud, || {
+    let mut file = match open_readonly(&port, baud, || {
         shared.lock().unwrap().diagnostics.port_opened = true;
     }) {
         Ok(f) => f,
@@ -827,7 +827,7 @@ fn run_with_timeouts(
         s.phase = Phase::WaitingHeartbeat;
         s.diagnostics.serial_configured = true;
     }
-    receive(&file, shared, cancel, wait_timeout, loss_timeout);
+    receive(&mut file, shared, cancel, wait_timeout, loss_timeout);
     // A PTY's exclusive flag survives closing the slave while its test master
     // remains open. Reset only the explicitly selected debug fixture.
     #[cfg(all(feature = "simulation", debug_assertions, target_os = "linux"))]
