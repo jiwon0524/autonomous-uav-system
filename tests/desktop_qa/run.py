@@ -12,6 +12,7 @@ PARSER.add_argument('--xdotool', help='optional X11 xdotool to focus the test wi
 PARSER.add_argument('--dev', action='store_true', help='start Vite and use debug simulation build')
 PARSER.add_argument('--with-map-key', action='store_true', help='copy existing key into isolated private config')
 PARSER.add_argument('--matrix', action='store_true', help='capture both themes at four requested window sizes')
+PARSER.add_argument('--fixtures', action='store_true', help='use synthetic loopback camera and point cloud sources')
 args=PARSER.parse_args()
 out=pathlib.Path(args.results).resolve(); out.mkdir(parents=True,exist_ok=True)
 with socket.socket() as probe:
@@ -25,7 +26,7 @@ for k,v in [('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HO
 if args.with_map_key:
  source=pathlib.Path.home()/'.config/org.firescene.gcs/vworld-api-key'
  dest=profile/'config/org.firescene.gcs/vworld-api-key'; dest.parent.mkdir(mode=0o700,parents=True); shutil.copyfile(source,dest); dest.chmod(0o600)
-vite=None; feed=None
+vite=None; feed=None; fixtures=[]
 if args.dev:
  vite=subprocess.Popen(['npm','run','dev','--','--port','1420','--strictPort'],cwd=ROOT/'frontend',env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  time.sleep(2)
@@ -42,6 +43,10 @@ def check(name,fn):
  except Exception as e:
   results.append({'name':name,'status':'FAIL','detail':type(e).__name__+': '+str(e)[:250]}); print('FAIL',name,str(e)[:250],flush=True)
   if name == 'simulation recording and replay': screenshot('recording-failure')
+  if name == 'synthetic camera display':
+   try:
+    screenshot('camera-failure'); command('POST','/window/rect',{'width':1200,'height':800})
+   except Exception: pass
   if name == 'offline practice basic':
    try:
     results[-1]['diagnostic']=js("return {focus:document.hasFocus(),visibility:document.visibilityState,reason:document.querySelector('.manual-preview [role=status]')?.innerText||''}")
@@ -60,8 +65,16 @@ def wait_for(script,seconds=10):
   time.sleep(.2)
  raise AssertionError('condition timed out: '+script[:160])
 def screenshot(name):
- # App-only WebDriver captures; system settings is excluded because it contains a key field.
+ # App-only WebDriver captures; settings are captured only through screenshot_settings redaction.
  (out/(name+'.png')).write_bytes(base64.b64decode(command('GET','/screenshot')))
+def screenshot_settings(name):
+ # Isolated profile only: hide all editable values and selects, including the map key and local paths.
+ js("const s=document.createElement('style');s.id='qa-redaction';s.textContent='input,textarea,select { visibility:hidden!important }';document.head.appendChild(s)")
+ try:
+  assert js("return [...document.querySelectorAll('input,textarea,select')].every(e=>getComputedStyle(e).visibility==='hidden')")
+  command('POST','/execute/async',{'script':'const done=arguments[arguments.length-1];requestAnimationFrame(()=>requestAnimationFrame(()=>done(true)))','args':[]})
+  screenshot(name)
+ finally: js("document.querySelector('#qa-redaction')?.remove()")
 def find_main_pid():
  def descend(pid):
   try: children=[int(x) for x in pathlib.Path(f'/proc/{pid}/task/{pid}/children').read_text().split()]
@@ -95,6 +108,10 @@ try:
  def first_run():
   wait_for("return !!document.querySelector('.first-run[role=dialog]')")
   wait_for("return document.activeElement?.closest('.first-run') !== null")
+  command('POST','/actions',{'actions':[{'type':'key','id':'keyboard','actions':[{'type':'keyDown','value':'\ue004'},{'type':'keyUp','value':'\ue004'}]}]})
+  assert js("return document.activeElement?.textContent.trim()==='English'")
+  command('POST','/actions',{'actions':[{'type':'key','id':'keyboard','actions':[{'type':'keyDown','value':'\ue008'},{'type':'keyDown','value':'\ue004'},{'type':'keyUp','value':'\ue004'},{'type':'keyUp','value':'\ue008'}]}]})
+  assert js("return document.activeElement?.textContent.trim()==='한국어'")
   assert js("const d=document.querySelector('.first-run'),b=d.querySelectorAll('button');b[0].focus();b[0].dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));return document.activeElement===b[b.length-1]")
   screenshot('first-run-ko')
   click_text('English'); wait_for("return document.querySelector('#first-run-title')?.innerText==='Welcome to FireScene GCS'")
@@ -103,6 +120,12 @@ try:
   screenshot('first-run-en-day'); click_text('Dark'); click_text('Skip setup')
   wait_for("return !document.querySelector('.first-run[role=dialog]')")
   assert js("return localStorage.getItem('firescene.setup.complete.v1')==='yes'")
+  wait_for("return !!document.activeElement?.matches('nav[aria-label=\"주 메뉴\"] button')")
+  js("localStorage.removeItem('firescene.setup.complete.v1')"); command('POST','/refresh',{})
+  wait_for("return !!document.querySelector('.first-run[role=dialog]')")
+  js("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))")
+  wait_for("return !document.querySelector('.first-run[role=dialog]') && localStorage.getItem('firescene.setup.complete.v1')==='yes'")
+  wait_for("return !!document.activeElement?.matches('nav[aria-label=\"주 메뉴\"] button')")
   command('POST','/refresh',{}); wait_for("return !!document.querySelector('nav[aria-label=\"주 메뉴\"]')",20)
   assert js("return !document.querySelector('.first-run[role=dialog]') && !!document.querySelector('.theme-dark')")
  check('first run setup and skip',first_run)
@@ -126,6 +149,12 @@ try:
   menu('종합 관제',0); click_text('전체 화면'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면 종료')")
   click_text('전체 화면 종료'); wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면')")
  check('native fullscreen',native_fullscreen)
+ def flight_and_autonomy():
+  menu('비행 제어',1); assert js("return document.body.innerText.includes('자세 정보 확인 불가') && !!document.querySelector('.flight-graphs:not([open])')")
+  js("document.querySelector('.flight-graphs summary').click()");wait_for("return !!document.querySelector('.flight-graphs[open]')")
+  menu('자율비행',3); assert js("return document.querySelector('.autonomy-page')?.innerText.includes('비행 명령 잠김') && document.body.innerText.includes('아직 사용할 수 없습니다')")
+  return 'unavailable attitude, expandable graphs and locked autonomy'
+ check('flight and autonomy states',flight_and_autonomy)
  def spatial_controls():
   menu('3D 매핑',4); js("document.querySelector('.spatial-connection summary').click()")
   wait_for("return !!document.querySelector('.spatial-connection[open] input')")
@@ -137,6 +166,33 @@ try:
   click_text('일반 보기')
   return 'connection controls accessible; WebGL backing size follows focus resize'
  check('3D controls and WebGL resize',spatial_controls)
+ if args.fixtures:
+  def synthetic_camera():
+   menu('카메라',5)
+   fixture=subprocess.Popen(['python3',str(ROOT/'tools/camera_perception_fixture.py')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); fixtures.append(fixture); time.sleep(.5)
+   for selector,value in [('.camera-connection input[placeholder="192.168.1.10"]','127.0.0.1'),('.camera-connection input[placeholder="8766"]','8766')]:
+    e=command('POST','/element',{'using':'css selector','value':selector}); command('POST','/element/'+e['element-6066-11e4-a52e-4f735466cecf']+'/value',{'text':value})
+   js("document.querySelector('.camera-connection button').click()")
+   wait_for("return !!document.querySelector('.camera-view img') && document.querySelectorAll('.camera-view svg rect').length===1",15)
+   click_text('카메라 집중 보기');wait_for("return !!document.querySelector('.body.focus-mode .camera-view img')")
+   assert js("const e=document.querySelector('.camera-view').getBoundingClientRect();return Math.abs(e.width/e.height-4/3)<0.02")
+   wait_for("const r=document.querySelector('.camera-view').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight",10)
+   screenshot('synthetic-camera-focus');command('POST','/window/rect',{'width':910,'height':512})
+   wait_for("const r=document.querySelector('.camera-view').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&Math.abs(r.width/r.height-4/3)<0.02",10)
+   screenshot('synthetic-camera-compact');command('POST','/window/rect',{'width':1200,'height':800});click_text('일반 보기')
+   return 'synthetic 640x480 frame, detection overlay and focus aspect ratio'
+  check('synthetic camera display',synthetic_camera)
+  def synthetic_spatial():
+   menu('3D 매핑',4)
+   fixture=subprocess.Popen(['python3',str(ROOT/'tools/spatial_fixture.py')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); fixtures.append(fixture); time.sleep(.5)
+   js("document.querySelector('.spatial-connection summary').click()")
+   for selector,value in [('.spatial-connection input[placeholder="192.168.1.10"]','127.0.0.1'),('.spatial-connection input[placeholder="8767"]','8767')]:
+    e=command('POST','/element',{'using':'css selector','value':selector}); command('POST','/element/'+e['element-6066-11e4-a52e-4f735466cecf']+'/value',{'text':value})
+   js("document.querySelector('.spatial-connection button').click()")
+   wait_for("return document.querySelector('.spatial-page')?.innerText.includes('렌더링 4000점')",15)
+   click_text('3D 매핑 집중 보기'); screenshot('synthetic-spatial-focus'); click_text('일반 보기')
+   return 'synthetic point cloud received and rendered'
+  check('synthetic point cloud display',synthetic_spatial)
  if args.matrix:
   for width,height in [(910,512),(1093,614),(1366,768),(1440,900),(1920,1080),(2560,1440)]:
    def matrix_size(width=width,height=height):
@@ -157,6 +213,7 @@ try:
        click_text('메뉴 펼치기'); wait_for("return document.querySelector('.nav-toggle')?.getAttribute('aria-expanded')==='true'")
        click_text('메뉴 접기'); wait_for("return document.querySelector('.nav-toggle')?.getAttribute('aria-expanded')==='false'")
       if name!='시스템 설정': screenshot(f'matrix-{width}x{height}-{theme}-{i}')
+      else: screenshot_settings(f'matrix-{width}x{height}-{theme}-{i}-redacted')
      if theme=='day': click_text('Dark')
     return f'window {width}x{height}; both themes, nine menus; safety and lock in viewport'
    check(f'matrix {width}x{height}',matrix_size)
@@ -198,8 +255,12 @@ try:
   click_text('전체 화면'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
   wait_for("return [...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='전체 화면 종료')")
   click_text('전체 화면 종료'); time.sleep(1); click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
+  element=command('POST','/element',{'using':'css selector','value':'[aria-label="위치 검색"]'})
+  command('POST','/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
+  wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
+  click_user('오프라인 입력 연습 ON'); wait_for("return document.body.innerText.includes('오프라인 입력 연습 · 기체 상태')")
   click_text('현장'); click_text('입력 미리보기'); wait_for("return document.querySelector('.manual-preview h2')?.innerText==='MONITOR'")
-  return 'WebDriver click and synthetic DOM events: all bindings, opposing input, Space, Escape, timeout, fullscreen and panel switch reset'
+  return 'WebDriver click and synthetic DOM events: bindings, opposing input, Space, Escape, timeout, input focus, fullscreen and panel switch reset'
  check('offline practice basic',keyboard)
  def map_search():
   menu('종합 관제',0); wait_for("return !!document.querySelector('[aria-label=\"위치 검색\"]')")
@@ -238,9 +299,32 @@ try:
   command('POST','/element/'+eid+'/clear',{}); command('POST','/element/'+eid+'/value',{'text':'QA isolated mission'})
   click_text('작성 중 저장'); wait_for("return document.body.innerText.includes('작성 중 임무를 저장했습니다')")
   click_text('복제'); wait_for("return document.body.innerText.includes('복제본을 작성 중 상태로 저장했습니다')")
+  screenshot('mission-editor-synthetic')
+  command('POST','/window/rect',{'width':910,'height':512}); wait_for("return !!document.querySelector('.mission-editor .map-info-disclosure')")
+  wait_for("const p=document.querySelector('.mission-editor .map-canvas'),c=p?.querySelector('canvas');if(!p||!c)return false;const a=p.getBoundingClientRect(),b=c.getBoundingClientRect();return Math.abs(a.width-b.width)<2&&Math.abs(a.height-b.height)<2",15)
+  time.sleep(2)  # Allow network tiles to repaint before the visual evidence capture.
+  screenshot('mission-editor-compact'); command('POST','/window/rect',{'width':1200,'height':800})
   menu('종합 관제',0); wait_for("return document.querySelector('.header-context')?.innerText.includes('QA isolated mission')")
   return 'created and duplicated isolated draft; overview mission shown'
  check('isolated mission draft and duplicate',draft_mission)
+ def mission_delete_cancel():
+  menu('임무 계획',2); wait_for("return [...document.querySelectorAll('.mission-list button')].some(e=>e.textContent.includes('QA isolated mission'))")
+  js("[...document.querySelectorAll('.mission-list button')].find(e=>e.textContent.includes('QA isolated mission')).click()")
+  wait_for("return [...document.querySelectorAll('.mission-actions button')].some(e=>e.textContent.trim()==='삭제')")
+  js("setTimeout(()=>[...document.querySelectorAll('.mission-actions button')].find(e=>e.textContent.trim()==='삭제').click(),0)")
+  try:
+   deadline=time.monotonic()+5; message=None
+   while time.monotonic()<deadline:
+    try: message=command('GET','/alert/text'); break
+    except Exception: time.sleep(.1)
+   assert message and '삭제' in message
+   command('POST','/alert/dismiss',{})
+  finally:
+   try: command('POST','/alert/dismiss',{})
+   except Exception: pass
+  assert js("return [...document.querySelectorAll('.mission-list button')].some(e=>e.textContent.includes('QA isolated mission'))")
+  return 'native confirmation cancelled; isolated mission remains'
+ check('mission delete confirmation cancel',mission_delete_cancel)
  if args.dev:
   def sim_connect():
    global feed
@@ -253,10 +337,29 @@ try:
   def compact_live_status():
    command('POST','/window/rect',{'width':910,'height':512}); menu('종합 관제',0)
    wait_for("return document.querySelector('.status-strip')?.innerText.includes('시뮬레이션')")
+   assert js("const b=document.querySelector('.header-context b'),old=b.textContent;b.textContent='임무'.repeat(50);const buttons=[...document.querySelectorAll('.header button')],ok=b.scrollWidth>b.clientWidth&&buttons.every(e=>e.getBoundingClientRect().right<=innerWidth);b.textContent=old;return ok")
+   size=js("const e=document.querySelector('.overview-shell .map-canvas'),w=document.querySelector('.overview-workspace');return {height:e.getBoundingClientRect().height,scroll:w.scrollHeight-w.clientHeight}")
+   screenshot('compact-live-overview')
+   assert size['height']>=150, f'compact map canvas too short: {size}'
+   assert size['scroll']<=1, f'compact overview has nested workspace overflow: {size}'
    assert js("return document.querySelector('.status-strip .safety-banner')?.getAttribute('aria-label')?.includes(' · ')")
    assert js("const s=document.querySelector('.status-strip'),a=s.querySelector('.safety-banner'),l=s.querySelector('.strip-lock');const inside=e=>{const r=e.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight};return s.scrollWidth<=s.clientWidth+1&&inside(a)&&inside(l)")
+   e=command('POST','/element',{'using':'css selector','value':'[aria-label="위치 검색"]'}); eid=e['element-6066-11e4-a52e-4f735466cecf']; command('POST','/element/'+eid+'/clear',{}); command('POST','/element/'+eid+'/value',{'text':'동의대학교'}); click_text('검색')
+   wait_for("return !!document.querySelector('.map-results button')",25)
+   assert js("const r=document.querySelector('.map-results button').getBoundingClientRect();return r.top>=0&&r.top<innerHeight&&r.left>=0&&r.right<=innerWidth")
    command('POST','/window/rect',{'width':1200,'height':800})
+   return f"map canvas {size['height']:.0f}px; workspace scroll overflow {size['scroll']}px"
   check('compact live source and safety',compact_live_status)
+  def live_safety():
+   menu('안전 관리',6); wait_for("return document.querySelector('.safety-page')?.innerText.includes('배터리 부족')",15)
+   screenshot('safety-simulation'); assert js("return !!document.querySelector('.safety-event time[datetime]')")
+   return 'synthetic battery warning with timestamp shown'
+  check('simulation safety event display',live_safety)
+  def live_instruments():
+   menu('비행 제어',1); wait_for("return !!document.querySelector('.attitude .horizon[role=img]')",15)
+   screenshot('flight-instruments-simulation')
+   return 'synthetic attitude shown in the instrument'
+  check('simulation flight instruments',live_instruments)
   def overview_telemetry():
    menu('종합 관제',0); wait_for("return document.querySelector('.overview-flight-values')?.innerText.includes('m') && document.body.innerText.includes('PX4 HEARTBEAT 수신')")
   check('overview live telemetry',overview_telemetry)
@@ -268,17 +371,42 @@ try:
    click_text('기록 종료'); wait_for("return document.querySelector('.recordings-page .source-label')?.innerText.includes('기록 중 아님')",12); wait_for("return [...document.querySelectorAll('.recording-list button')].some(e=>e.textContent.includes('QA synthetic recording'))",12)
    js("[...document.querySelectorAll('.recording-list button')].find(e=>e.textContent.includes('QA synthetic recording')).click()")
    wait_for("return document.body.innerText.includes('REPLAY · 과거 기록')",10)
+   screenshot('recording-replay-synthetic')
+   js("setTimeout(()=>document.querySelector('.replay-panel .danger-action').click(),0)")
+   try:
+    deadline=time.monotonic()+5; message=None
+    while time.monotonic()<deadline:
+     try: message=command('GET','/alert/text'); break
+     except Exception: time.sleep(.1)
+    assert message and '삭제' in message
+    command('POST','/alert/dismiss',{})
+   finally:
+    try: command('POST','/alert/dismiss',{})
+    except Exception: pass
+   assert js("return document.body.innerText.includes('REPLAY · 과거 기록') && [...document.querySelectorAll('.recording-list button')].some(e=>e.textContent.includes('QA synthetic recording'))")
    wait_for("return [...document.querySelectorAll('.replay-controls button')].some(e=>e.textContent.trim()==='재생'&&!e.disabled)",12); click_text('재생'); wait_for("return document.body.innerText.includes('일시정지')"); click_text('일시정지')
    js("const e=document.querySelector('[aria-label=\"재생 속도\"]');e.value='2';e.dispatchEvent(new Event('change',{bubbles:true}))")
    click_text('JSONL 내보내기'); wait_for("return document.body.innerText.includes('내보내기 완료')")
-   return 'low battery warning; synthetic record saved, replayed, paused and exported to isolated data' 
+   return 'low battery warning; synthetic record saved, delete cancelled, replayed, paused and exported to isolated data'
   check('simulation recording and replay',recording)
+  def restart_data():
+   global sid
+   command('DELETE',''); sid=None
+   response=call('POST','/session',{'capabilities':{'alwaysMatch':{'browserName':'wry','tauri:options':{'application':str(pathlib.Path(args.app).resolve())}}}})
+   sid=response['sessionId']; wait_for("return !!document.querySelector('nav[aria-label=\"주 메뉴\"]')",20)
+   assert js("return !document.querySelector('.first-run') && localStorage.getItem('firescene.setup.complete.v1')==='yes' && localStorage.getItem('firescene.ui.theme')==='dark'")
+   menu('임무 계획',2); wait_for("return document.body.innerText.includes('QA isolated mission')",15)
+   menu('비행 기록',7); wait_for("return document.body.innerText.includes('QA synthetic recording')",15)
+   return 'isolated mission, recording, theme and first-run completion survive process restart'
+  check('process restart data preservation',restart_data)
 finally:
  if sid:
   try: command('DELETE','')
   except Exception: pass
  if feed:
   feed.terminate(); feed.wait(timeout=5)
+ for fixture in fixtures:
+  if fixture.poll() is None: fixture.terminate(); fixture.wait(timeout=5)
  if vite:
   vite.terminate(); vite.wait(timeout=5)
  proc.terminate()
